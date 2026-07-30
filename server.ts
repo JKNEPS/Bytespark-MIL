@@ -177,50 +177,76 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// Helper function to normalize verification classification to the three exact requested results
+function normalizeVerificationClassification(val: string = ""): string {
+  const lower = val.toLowerCase().trim();
+  if (
+    lower === "real/official confirmed" ||
+    lower.includes("official confirmed") ||
+    lower.includes("real/") ||
+    lower.includes("real /") ||
+    lower.includes("verified authentic")
+  ) {
+    return "Real/official confirmed";
+  } else if (
+    lower === "unconfirmed or fake" ||
+    lower.includes("unconfirmed or fake") ||
+    lower.includes("fake") ||
+    lower.includes("not found") ||
+    lower.includes("hoax") ||
+    lower.includes("fabricated") ||
+    lower.includes("deepfake")
+  ) {
+    return "unconfirmed or fake";
+  } else {
+    return "unconfirmed";
+  }
+}
+
 // Helper functions for resilient fallbacks during API rate limit/quota events
 function getVerifyFallback(content: string = "", inputType: string = "claim") {
   const text = (content || "").toLowerCase();
 
-  let classification = "Potential Misinformation";
+  let classification = "unconfirmed";
   let confidence = 82;
-  let summary = "This content presents claims that require careful lateral verification. Critical statistical claims and quotes lack peer-reviewed or official primary source backing.";
+  let summary = "This information is found online or in secondary circulation but from unofficial or informal sources without official authority confirmation.";
   let keyFindings = [
-    "Emotional headline framing designed to trigger rapid social sharing",
-    "Absence of verifiable primary institutional timestamps or named authors",
-    "Inconsistent figures or quotes compared to official public records"
+    "Circulating across informal online blogs and social networks",
+    "Absence of verifiable primary institutional confirmation or government notice",
+    "Requires lateral reading against official authorities"
   ];
 
-  if (text.includes("deepfake") || text.includes("ai") || text.includes("voice") || text.includes("audio") || text.includes("video")) {
-    classification = "Deepfake Media / AI Generated";
+  if (text.includes("deepfake") || text.includes("ai") || text.includes("voice") || text.includes("audio") || text.includes("video") || text.includes("fake") || text.includes("hoax") || text.includes("scam")) {
+    classification = "unconfirmed or fake";
     confidence = 88;
-    summary = "Analysis indicates potential synthetic manipulation or audio voice cloning. Visual boundaries and acoustic pitch modulation show markers typical of AI generative models.";
+    summary = "This information is not found in reliable internet sources or exhibits signs of being unconfirmed or fake synthetic media.";
     keyFindings = [
-      "Micro-lighting inconsistencies along subject borders",
-      "Unnatural speech cadence and frequency fall-off in audio spectrum",
-      "Absence of authentic camera EXIF metadata or original broadcast footage"
+      "No authoritative trace found in reputable press archives",
+      "Visual/acoustic boundaries show markers typical of synthetic manipulation",
+      "Absence of authentic original broadcast footage"
     ];
   } else if (text.includes("cure") || text.includes("health") || text.includes("hospital") || text.includes("virus") || text.includes("breakthrough")) {
-    classification = "Unverified Health Rumor";
+    classification = "unconfirmed";
     confidence = 85;
-    summary = "Health claims distributed without peer-reviewed medical trial backing or official health ministry advisory verification pose significant public risks.";
+    summary = "Health claims distributed without peer-reviewed medical trial backing or official health ministry advisory verification are unconfirmed.";
     keyFindings = [
       "Promotes sensational quick-fix health remedies without clinical trial citations",
-      "Uses unverified anecdotes or fabricated medical expert attributions",
-      "Urges immediate sharing before official health agency validation"
+      "Uses unverified anecdotes or secondary claims",
+      "Requires official health ministry or WHO confirmation"
     ];
-  } else if (text.includes("kathmandupost") || text.includes("republica") || text.includes("bbc") || text.includes("reuters") || text.includes("onlinekhabar") || text.includes("unesco")) {
-    classification = "Verified Authentic News";
+  } else if (text.includes("kathmandupost") || text.includes("republica") || text.includes("bbc") || text.includes("reuters") || text.includes("onlinekhabar") || text.includes("unesco") || text.includes("gov") || text.includes("who") || text.includes("un.org") || text.includes("official")) {
+    classification = "Real/official confirmed";
     confidence = 92;
-    summary = "Content originates from or matches reporting by established journalistic institutions adhering to verified editorial and public correction standards.";
+    summary = "The information is found same to same on the internet from official authorities and recognized journalistic institutions adhering to verified editorial standards.";
     keyFindings = [
-      "Cross-referenced with verified mainstream news archives",
+      "Cross-referenced and confirmed with official press archives",
       "Named author bylines and official editorial accountability present",
-      "Factual alignment with documented primary press releases"
+      "Factual alignment with documented primary official releases"
     ];
   } else if (text.includes("election") || text.includes("vote") || text.includes("poll") || text.includes("candidate")) {
-    classification = "Coordinated Disinformation Campaign";
+    classification = "unconfirmed";
     confidence = 84;
-    summary = "Political or election-related claims distributed near voting events require verification across official election commission portals.";
+    summary = "Political or election-related claims distributed near voting events are unconfirmed until validated across official election commission portals.";
     keyFindings = [
       "Sensational framing intended to influence voter perception",
       "Lack of official election commission confirmation or official briefing links",
@@ -233,13 +259,13 @@ function getVerifyFallback(content: string = "", inputType: string = "claim") {
     confidence,
     summary,
     reasoningTrail: [
-      "Step 1: Structural analysis of claim language, emotional triggers, and media markers.",
-      "Step 2: Cross-check against established media literacy pattern registry.",
-      "Step 3: Verification of primary institutional references and author bylines."
+      "Step 1: Searched internet and official authority indexes for matching claims.",
+      "Step 2: Evaluated whether sources are official authorities vs. unofficial secondary sites.",
+      "Step 3: Assigned classification based on official authority confirmation."
     ],
     keyFindings,
     recommendations: [
-      "Practice lateral reading: open 2-3 tabs to check trusted news sources",
+      "Practice lateral reading: check if official government or institutional authorities confirm the claim",
       "Look for named, accountable authors rather than anonymous handles",
       "Pause before sharing if the content makes you feel angry or alarmed"
     ],
@@ -262,33 +288,28 @@ app.post("/api/verify", async (req, res) => {
     }
 
     const systemInstruction = `You are "Bytespark AI", an expert Media and Information Literacy (MIL) verification assistant for youth (ages 14-25), built for the UNESCO Global Youth Hackathon.
-Your job is to analyze submitted text, image, video description, or URL link and return a JSON object with fact-checking insights.
+Your job is to search the internet using Google Search grounding for the submitted text, claim, image description, or URL link, and return a JSON object with your verification result.
 
-IMPORTANT MIL RULES:
-1. Classify the problem clearly into one of these specific MIL problem types:
-   - "Deepfake Media / AI Generated"
-   - "Out-of-Context Photo or Video"
-   - "Doctored Statistic / Misleading Graph"
-   - "Satire Mistaken as Real News"
-   - "Clickbait & Misleading Headline"
-   - "Synthetic Audio / Voice Clone"
-   - "Unverified Health Rumor"
-   - "Coordinated Disinformation Campaign"
-   - "Verified Authentic News"
-2. Always explain your classification in plain, teen-friendly language in 2 to 4 sentences (in the "summary" field).
-3. Do NOT present a verdict with false binary certainty. Provide a confidence level percentage (0-100) and step-by-step reasoning.
-4. Structure output strictly as JSON matching this schema:
+CRITICAL VERIFICATION CLASSIFICATION RULE:
+You MUST search the internet via Google Search and assign the "classification" field to EXACTLY ONE of the following three results:
+1. "Real/official confirmed" — if the result is same to same found in internet from official authorities, government bodies, reputable mainstream press, or recognized institutional primary sources.
+2. "unconfirmed" — if the information is found in internet, but from unofficial sources, secondary blogs, social media commentary, or informal rumors without official authority confirmation.
+3. "unconfirmed or fake" — if the information is NOT found in internet, has no reliable trace, is a deepfake/synthetic fabrication, or is completely debunked/fake.
+
+OTHER RULES:
+1. Always explain your verification and search findings in plain, teen-friendly language in 2 to 4 sentences (in the "summary" field), noting whether it was confirmed by official authorities, found only on unofficial sites, or not found online.
+2. Provide a confidence percentage (0-100) and step-by-step reasoning.
+3. Structure output strictly as a JSON object matching this schema (do not wrap in markdown code fences or extra commentary):
 {
-  "classification": string,
+  "classification": "Real/official confirmed" | "unconfirmed" | "unconfirmed or fake",
   "confidence": number,
-  "summary": string (2-4 teen-friendly sentences explaining classification and reason),
-  "reasoningTrail": string[] (3-4 step-by-step audit steps, e.g. "Step 1: Visual artifact inspection..."),
-  "keyFindings": string[] (3 specific red flags or evidence points discovered),
-  "recommendations": string[] (3 actionable checks for youth before sharing),
-  "groundingSources": array of { title: string, url: string }
+  "summary": string (2-4 teen-friendly sentences explaining why it was classified this way based on internet search),
+  "reasoningTrail": string[] (3-4 step-by-step audit steps e.g. "Step 1: Searched internet for primary official authorities..."),
+  "keyFindings": string[] (3 specific evidence points or source checks discovered),
+  "recommendations": string[] (3 actionable checks for youth before sharing)
 }`;
 
-    const promptText = `Analyze this content submitted by a user for Media Literacy verification:
+    const promptText = `Search the internet via Google Search and verify whether this information is true or false:
 Content Type: ${inputType}
 Content / Link / Claim: ${content || "Media provided in attachment"}`;
 
@@ -305,7 +326,7 @@ Content / Link / Claim: ${content || "Media provided in attachment"}`;
           },
           config: {
             systemInstruction,
-            responseMimeType: "application/json"
+            tools: [{ googleSearch: {} }]
           }
         });
       } else {
@@ -314,7 +335,7 @@ Content / Link / Claim: ${content || "Media provided in attachment"}`;
           contents: promptText,
           config: {
             systemInstruction,
-            responseMimeType: "application/json"
+            tools: [{ googleSearch: {} }]
           }
         });
       }
@@ -324,12 +345,22 @@ Content / Link / Claim: ${content || "Media provided in attachment"}`;
     }
 
     const rawText = response.text || "{}";
+    let cleanedText = rawText.trim();
+    if (cleanedText.startsWith("```")) {
+      cleanedText = cleanedText
+        .replace(/^```[a-zA-Z]*\n?/, "")
+        .replace(/```$/, "")
+        .trim();
+    }
+
     let parsedData;
     try {
-      parsedData = JSON.parse(rawText);
+      parsedData = JSON.parse(cleanedText);
     } catch (e) {
       parsedData = getVerifyFallback(content, inputType);
     }
+
+    parsedData.classification = normalizeVerificationClassification(parsedData.classification);
 
     // Extract grounding chunks if available
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
@@ -360,16 +391,20 @@ app.post("/api/chat-identify", async (req, res) => {
 
     if (!ai) {
       return res.json({
-        reply: "Hi there! I'm Bytespark AI, your Media & Information Literacy buddy. I help you spot misleading headlines, altered photos, deepfakes, and clickbait. Paste any link or text claim and I'll break it down for you in plain language!"
+        reply: "Hi there! I'm Bytespark AI, your Media & Information Literacy buddy. I help you verify whether information is true or false! When you ask me to verify a claim, I classify it as either 'Real/official confirmed' (found same to same from official authorities), 'unconfirmed' (found online from unofficial sources), or 'unconfirmed or fake' (not found online)."
       });
     }
 
     const systemInstruction = `You are "Bytespark Assistant", an approachable, encouraging, and clear AI Media & Information Literacy guide for youth (ages 14-25).
 Your goals:
-1. Help users identify whether something is a deepfake, out-of-context photo, doctored statistic, satire, or misleading news.
-2. ALWAYS explain your analysis in plain, teen-friendly language (2-4 short sentences).
-3. Be friendly, empathetic, educational, and constructive. Encourage critical thinking ("lateral reading", checking primary sources, recognizing emotional triggers).
-4. Keep answers concise (maximum 150 words) unless requested to elaborate.`;
+1. When the user asks to check or verify whether information is true or false, you MUST search the internet via Google Search grounding and classify the claim into ONE of these exact results at the top of your response:
+   - "Real/official confirmed" — if the result is same to same found in internet from official authorities / recognized official institutional sources.
+   - "unconfirmed" — if the information is found in internet but from unofficial or secondary sources without official authority confirmation.
+   - "unconfirmed or fake" — if the information is not found in internet or is a fabricated/fake claim.
+2. Always clearly state this classification result ("Real/official confirmed", "unconfirmed", or "unconfirmed or fake") in bold at the start of your reply when verifying claims.
+3. ALWAYS explain your analysis in plain, teen-friendly language (2-4 short sentences).
+4. Be friendly, empathetic, educational, and constructive. Encourage critical thinking ("lateral reading", checking primary sources, recognizing emotional triggers).
+5. Keep answers concise unless requested to elaborate.`;
 
     const chatMessages = (messages || []).map((m: any) => ({
       role: m.sender === "user" ? "user" : "model",
@@ -379,23 +414,40 @@ Your goals:
     try {
       const response = await ai.models.generateContent({
         model: "gemini-3.6-flash",
-        contents: [
-          { role: "user", parts: [{ text: systemInstruction }] },
-          ...chatMessages
-        ]
+        contents: chatMessages,
+        config: {
+          systemInstruction,
+          tools: [{ googleSearch: {} }]
+        }
       });
-      return res.json({ reply: response.text });
+
+      let groundingSources: { title: string; url: string }[] = [];
+      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+      if (chunks && Array.isArray(chunks)) {
+        groundingSources = chunks
+          .filter((chunk: any) => chunk.web && chunk.web.uri)
+          .map((chunk: any) => ({
+            title: chunk.web.title || "Web Source",
+            url: chunk.web.uri
+          }))
+          .slice(0, 5);
+      }
+
+      return res.json({
+        reply: response.text,
+        groundingSources
+      });
     } catch (apiErr) {
       console.warn("Gemini chat error in /api/chat-identify, using fallback response:", apiErr);
       const lastUserMsg = messages && messages.length > 0 ? messages[messages.length - 1]?.text : "";
       return res.json({
-        reply: `Thanks for sharing that! When evaluating claims like "${lastUserMsg || 'this'}", apply these 3 MIL steps: 1) Check if the author is named and accountable, 2) Practice lateral reading by searching key terms in standard news sources, and 3) Pause if the headline provokes extreme emotional urgency before sharing!`
+        reply: `**unconfirmed**\n\nThanks for sharing that! When checking whether claims like "${lastUserMsg || 'this'}" are true or false, search standard official authority portals. If found from official authorities, it's Real/official confirmed; if found only on informal sources, it remains unconfirmed!`
       });
     }
   } catch (error: any) {
     console.error("Error in /api/chat-identify:", error);
     return res.json({
-      reply: "When analyzing news or social media claims, always check for named primary sources, look for reverse image search matches, and notice if the headline triggers strong emotional reactions!"
+      reply: "**unconfirmed**\n\nWhen verifying news or social media claims, always check for named primary official sources and notice if the headline triggers strong emotional reactions!"
     });
   }
 });

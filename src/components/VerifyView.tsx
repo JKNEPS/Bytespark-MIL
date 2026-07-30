@@ -128,9 +128,9 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
       console.error('Verification error:', err);
       // Fallback response for offline / error tolerance
       const fallback: VerificationResult = {
-        classification: 'Unverified Claim',
+        classification: 'unconfirmed',
         confidence: 82,
-        summary: 'This claim exhibits hallmarks of emotional viral framing. Primary sources and timestamp records could not be independently corroborated.',
+        summary: 'This information is found in circulation but from unofficial sources without official authority confirmation.',
         reasoningTrail: [
           'Step 1: Text structure analysis for sensational trigger phrases.',
           'Step 2: Cross-checked against digital news archive records.',
@@ -409,11 +409,50 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
           <div className="flex items-start justify-between pb-3 border-b border-slate-100">
             <div>
               <span className="text-[10px] font-bold uppercase tracking-wider text-[#7A1F2B] bg-[#FDF2F4] px-2 py-0.5 rounded-md border border-[#7A1F2B]/20">
-                VERDICT & REASONING TRAIL
+                INTERNET SEARCH VERDICT & REASONING TRAIL
               </span>
-              <h3 className="text-base sm:text-lg font-bold font-serif-title text-slate-900 mt-1">
-                {verificationResult.classification}
-              </h3>
+              <div className="mt-2">
+                {(() => {
+                  const cls = verificationResult.classification.toLowerCase();
+                  if (cls.includes('real') || cls.includes('official confirmed') || cls.includes('verified authentic')) {
+                    return (
+                      <div>
+                        <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>Real/official confirmed</span>
+                        </span>
+                        <p className="text-[11px] font-medium text-emerald-700 mt-1.5">
+                          ✓ Same to same found in internet from official authorities
+                        </p>
+                      </div>
+                    );
+                  } else if (cls.includes('unconfirmed or fake') || cls.includes('fake') || cls.includes('not found') || cls.includes('hoax') || cls.includes('deepfake')) {
+                    return (
+                      <div>
+                        <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-bold bg-rose-100 text-rose-800 border border-rose-300 shadow-xs">
+                          <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+                          <span>unconfirmed or fake</span>
+                        </span>
+                        <p className="text-[11px] font-medium text-rose-700 mt-1.5">
+                          ✗ Information not found in internet or fabricated claim
+                        </p>
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div>
+                        <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-bold bg-amber-100 text-amber-800 border border-amber-300 shadow-xs">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>unconfirmed</span>
+                        </span>
+                        <p className="text-[11px] font-medium text-amber-700 mt-1.5">
+                          ⚠️ Found in internet but from unofficial source
+                        </p>
+                      </div>
+                    );
+                  }
+                })()}
+              </div>
             </div>
             
             {/* Confidence Dial */}

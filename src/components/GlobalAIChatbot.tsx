@@ -13,7 +13,7 @@ export const GlobalAIChatbot: React.FC<GlobalAIChatbotProps> = ({ isOpen: extern
     {
       id: 'msg-init',
       sender: 'assistant',
-      text: "👋 Hi! I'm Bytespark AI, your 24/7 Media & Information Literacy Assistant.\n\nAsk me anything about deepfakes, viral rumors, online legal rights, or scam verification!",
+      text: "👋 Hi! I'm Bytespark AI, your Media & Information Literacy Assistant.\n\nI search the internet in real-time to verify claims! I will classify claims as:\n• Real/official confirmed (same to same from official authorities)\n• unconfirmed (found online on unofficial sources)\n• unconfirmed or fake (not found online or fake)",
       timestamp: 'Just now'
     }
   ]);
@@ -93,9 +93,9 @@ export const GlobalAIChatbot: React.FC<GlobalAIChatbotProps> = ({ isOpen: extern
   };
 
   const quickPrompts = [
+    "Verify: UNESCO is a UN agency for education and science",
+    "Verify claim: drinking garlic water cures all viral diseases immediately",
     "How do I spot a deepfake video?",
-    "Is a screenshot proof of truth?",
-    "How to report non-consensual deepfakes?",
     "What is lateral reading?"
   ];
 
