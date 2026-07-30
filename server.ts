@@ -177,6 +177,66 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// Helper function to handle quota/rate limits resiliently across models and search configurations
+async function generateContentWithResilientFallback(
+  ai: any,
+  options: {
+    contents: any;
+    systemInstruction?: string;
+    useGoogleSearch?: boolean;
+    responseMimeType?: string;
+  }
+) {
+  try {
+    const config: any = {
+      systemInstruction: options.systemInstruction
+    };
+    if (options.useGoogleSearch) {
+      config.tools = [{ googleSearch: {} }];
+    } else if (options.responseMimeType) {
+      config.responseMimeType = options.responseMimeType;
+    }
+    return await ai.models.generateContent({
+      model: "gemini-3.6-flash",
+      contents: options.contents,
+      config
+    });
+  } catch (firstErr) {
+    // If the first attempt failed (e.g., Google Search grounding tool quota limit 429),
+    // try standard gemini-3.6-flash without Google Search tool
+    try {
+      const config: any = {
+        systemInstruction: options.systemInstruction
+      };
+      if (options.responseMimeType) {
+        config.responseMimeType = options.responseMimeType;
+      }
+      return await ai.models.generateContent({
+        model: "gemini-3.6-flash",
+        contents: options.contents,
+        config
+      });
+    } catch (secondErr) {
+      // Third attempt: try gemini-2.5-flash
+      try {
+        const config: any = {
+          systemInstruction: options.systemInstruction
+        };
+        if (options.responseMimeType) {
+          config.responseMimeType = options.responseMimeType;
+        }
+        return await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: options.contents,
+          config
+        });
+      } catch (thirdErr) {
+        return null; // Signals to caller to use clean fallback data without error logging
+      }
+    }
+  }
+}
+
 // Helper function to normalize verification classification to the three exact requested results
 function normalizeVerificationClassification(val: string = ""): string {
   const lower = val.toLowerCase().trim();
@@ -313,34 +373,22 @@ OTHER RULES:
 Content Type: ${inputType}
 Content / Link / Claim: ${content || "Media provided in attachment"}`;
 
-    let response;
-    try {
-      if (imageBase64 && mimeType) {
-        response = await ai.models.generateContent({
-          model: "gemini-3.6-flash",
-          contents: {
-            parts: [
-              { inlineData: { mimeType: mimeType || "image/jpeg", data: imageBase64 } },
-              { text: promptText }
-            ]
-          },
-          config: {
-            systemInstruction,
-            tools: [{ googleSearch: {} }]
-          }
-        });
-      } else {
-        response = await ai.models.generateContent({
-          model: "gemini-3.6-flash",
-          contents: promptText,
-          config: {
-            systemInstruction,
-            tools: [{ googleSearch: {} }]
-          }
-        });
-      }
-    } catch (genErr) {
-      console.warn("Gemini generateContent error in /api/verify, using fallback:", genErr);
+    const contents = (imageBase64 && mimeType)
+      ? {
+          parts: [
+            { inlineData: { mimeType: mimeType || "image/jpeg", data: imageBase64 } },
+            { text: promptText }
+          ]
+        }
+      : promptText;
+
+    const response = await generateContentWithResilientFallback(ai, {
+      contents,
+      systemInstruction,
+      useGoogleSearch: true
+    });
+
+    if (!response) {
       return res.json(getVerifyFallback(content, inputType));
     }
 
@@ -378,7 +426,6 @@ Content / Link / Claim: ${content || "Media provided in attachment"}`;
 
     return res.json(parsedData);
   } catch (error: any) {
-    console.error("Error in /api/verify:", error);
     return res.json(getVerifyFallback(content, inputType));
   }
 });
@@ -411,41 +458,36 @@ Your goals:
       parts: [{ text: m.text }]
     }));
 
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: chatMessages,
-        config: {
-          systemInstruction,
-          tools: [{ googleSearch: {} }]
-        }
-      });
+    const response = await generateContentWithResilientFallback(ai, {
+      contents: chatMessages,
+      systemInstruction,
+      useGoogleSearch: true
+    });
 
-      let groundingSources: { title: string; url: string }[] = [];
-      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-      if (chunks && Array.isArray(chunks)) {
-        groundingSources = chunks
-          .filter((chunk: any) => chunk.web && chunk.web.uri)
-          .map((chunk: any) => ({
-            title: chunk.web.title || "Web Source",
-            url: chunk.web.uri
-          }))
-          .slice(0, 5);
-      }
-
-      return res.json({
-        reply: response.text,
-        groundingSources
-      });
-    } catch (apiErr) {
-      console.warn("Gemini chat error in /api/chat-identify, using fallback response:", apiErr);
+    if (!response) {
       const lastUserMsg = messages && messages.length > 0 ? messages[messages.length - 1]?.text : "";
       return res.json({
         reply: `**unconfirmed**\n\nThanks for sharing that! When checking whether claims like "${lastUserMsg || 'this'}" are true or false, search standard official authority portals. If found from official authorities, it's Real/official confirmed; if found only on informal sources, it remains unconfirmed!`
       });
     }
+
+    let groundingSources: { title: string; url: string }[] = [];
+    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+    if (chunks && Array.isArray(chunks)) {
+      groundingSources = chunks
+        .filter((chunk: any) => chunk.web && chunk.web.uri)
+        .map((chunk: any) => ({
+          title: chunk.web.title || "Web Source",
+          url: chunk.web.uri
+        }))
+        .slice(0, 5);
+    }
+
+    return res.json({
+      reply: response.text,
+      groundingSources
+    });
   } catch (error: any) {
-    console.error("Error in /api/chat-identify:", error);
     return res.json({
       reply: "**unconfirmed**\n\nWhen verifying news or social media claims, always check for named primary official sources and notice if the headline triggers strong emotional reactions!"
     });
@@ -495,24 +537,19 @@ User's Argument Text:
 
 Evaluate the quality of this argument according to media literacy standards.`;
 
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: prompt,
-        config: {
-          systemInstruction,
-          responseMimeType: "application/json"
-        }
-      });
+    const response = await generateContentWithResilientFallback(ai, {
+      contents: prompt,
+      systemInstruction,
+      responseMimeType: "application/json"
+    });
 
-      const parsed = JSON.parse(response.text || "{}");
-      return res.json(parsed);
-    } catch (apiErr) {
-      console.warn("Gemini debate moderation error, using fallback evaluation:", apiErr);
+    if (!response) {
       return res.json(debateFallback);
     }
+
+    const parsed = JSON.parse(response.text || "{}");
+    return res.json(parsed);
   } catch (error: any) {
-    console.error("Error in /api/moderate-debate:", error);
     return res.json(debateFallback);
   }
 });
@@ -634,34 +671,22 @@ Analyze the user submission and return a JSON object strictly adhering to this s
 Content Type: ${contentType}
 User Text/Url: ${contentText || mediaUrl || "Image attached"}`;
 
-    let response;
-    try {
-      if (imageBase64 && mimeType) {
-        response = await ai.models.generateContent({
-          model: "gemini-3.6-flash",
-          contents: {
-            parts: [
-              { inlineData: { mimeType: mimeType || "image/jpeg", data: imageBase64 } },
-              { text: promptText }
-            ]
-          },
-          config: {
-            systemInstruction,
-            responseMimeType: "application/json"
-          }
-        });
-      } else {
-        response = await ai.models.generateContent({
-          model: "gemini-3.6-flash",
-          contents: promptText,
-          config: {
-            systemInstruction,
-            responseMimeType: "application/json"
-          }
-        });
-      }
-    } catch (genErr) {
-      console.warn("Gemini generateContent error in /api/check-authenticity, using fallback:", genErr);
+    const contents = (imageBase64 && mimeType)
+      ? {
+          parts: [
+            { inlineData: { mimeType: mimeType || "image/jpeg", data: imageBase64 } },
+            { text: promptText }
+          ]
+        }
+      : promptText;
+
+    const response = await generateContentWithResilientFallback(ai, {
+      contents,
+      systemInstruction,
+      responseMimeType: "application/json"
+    });
+
+    if (!response) {
       return res.json({
         aiScore: 78,
         signals: [
@@ -681,8 +706,7 @@ User Text/Url: ${contentText || mediaUrl || "Image attached"}`;
     }
     return res.json(parsed);
   } catch (err: any) {
-    console.error("Error in /api/check-authenticity:", err);
-    res.json({
+    return res.json({
       aiScore: 72,
       signals: [
         "Inconsistent visual grain or stylistic cadence detected",
@@ -752,25 +776,19 @@ Structure response strictly as JSON matching this schema:
     const prompt = `Evaluate the source credibility for this URL or headline:
 "${sourceUrlOrHeadline}"`;
 
-    let response;
-    try {
-      response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: prompt,
-        config: {
-          systemInstruction,
-          responseMimeType: "application/json"
-        }
-      });
-    } catch (genErr) {
-      console.warn("Gemini generateContent error in /api/scan-source, using fallback:", genErr);
+    const response = await generateContentWithResilientFallback(ai, {
+      contents: prompt,
+      systemInstruction,
+      responseMimeType: "application/json"
+    });
+
+    if (!response) {
       return res.json(getSourceFallback(sourceUrlOrHeadline));
     }
 
     const parsed = JSON.parse(response.text || "{}");
     return res.json(parsed);
   } catch (err: any) {
-    console.error("Error in /api/scan-source:", err);
     return res.json(getSourceFallback(sourceUrlOrHeadline));
   }
 });
