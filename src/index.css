@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --maroon: #7A1F2B;
+    --maroon-dark: #5A131E;
+    --maroon-light: #9B1B30;
+    --maroon-subtle: #FDF2F4;
+    --bg-light: #F5F5F5;
+    --card-border: #E0E0E0;
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: #F5F5F5;
+    color: #1E293B;
+  }
+
+  h1, h2, .font-serif-title {
+    font-family: 'Newsreader', Georgia, serif;
+  }
+}
+
+/* Custom Utilities for PWA & Safe Area */
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.pt-safe {
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+

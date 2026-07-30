@@ -1,0 +1,6 @@
+{
+  "name": "Bytespark MIL",
+  "description": "A gamified Media and Information Literacy ecosystem helping youth spot misinformation and take action, built for the UNESCO Global Youth Hackathon.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
