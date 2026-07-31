@@ -5,9 +5,10 @@ import { TabType } from '../types';
 interface BottomNavProps {
   activeTab: TabType;
   setActiveTab: (tab: TabType) => void;
+  deviceMode?: 'laptop' | 'mobile';
 }
 
-export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab }) => {
+export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab, deviceMode = 'mobile' }) => {
   const tabs = [
     { id: 'home' as TabType, label: 'Feed', icon: Home },
     { id: 'verify' as TabType, label: 'Verify', icon: ShieldCheck, badge: 'AI' },
@@ -20,7 +21,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#E0E0E0] pb-safe shadow-lg">
-      <div className="max-w-md mx-auto px-1 flex items-center justify-between h-15 overflow-x-auto no-scrollbar">
+      <div className={`${deviceMode === 'laptop' ? 'max-w-5xl' : 'max-w-md'} mx-auto px-1 flex items-center justify-between h-15 overflow-x-auto no-scrollbar transition-all duration-300`}>
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;

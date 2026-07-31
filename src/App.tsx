@@ -22,10 +22,32 @@ import { DigitalSelfDefenseView } from './components/DigitalSelfDefenseView';
 import { ResponseTeamView } from './components/ResponseTeamView';
 import { AdminDashboardModal } from './components/AdminDashboardModal';
 import { GlobalAIChatbot } from './components/GlobalAIChatbot';
+import { DeviceSelectionModal, DeviceMode } from './components/DeviceSelectionModal';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('home');
   const [currentLanguage, setCurrentLanguage] = useState<SupportedLanguage>('en');
+
+  // Device mode & screen ratio preference
+  const [deviceMode, setDeviceMode] = useState<DeviceMode>(() => {
+    const savedMode = localStorage.getItem('bytespark_device_mode');
+    return (savedMode === 'laptop' || savedMode === 'mobile') ? savedMode : 'mobile';
+  });
+  const [showDeviceModal, setShowDeviceModal] = useState<boolean>(() => {
+    return !localStorage.getItem('bytespark_device_mode');
+  });
+
+  const handleSelectDeviceMode = (mode: DeviceMode) => {
+    setDeviceMode(mode);
+    localStorage.setItem('bytespark_device_mode', mode);
+    setShowDeviceModal(false);
+  };
+
+  const handleToggleDeviceMode = () => {
+    const nextMode = deviceMode === 'laptop' ? 'mobile' : 'laptop';
+    setDeviceMode(nextMode);
+    localStorage.setItem('bytespark_device_mode', nextMode);
+  };
 
   // Modals state
   const [showVictimModal, setShowVictimModal] = useState<boolean>(false);
@@ -126,6 +148,16 @@ export default function App() {
     addXP(points);
   };
 
+  // Render the device selection onboarding page first before showing the home page and app
+  if (showDeviceModal) {
+    return (
+      <DeviceSelectionModal
+        isOpen={true}
+        onSelectMode={handleSelectDeviceMode}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F5F5F5] text-slate-900 flex flex-col font-sans selection:bg-[#7A1F2B] selection:text-white">
       {/* Top Mobile Navbar */}
@@ -139,10 +171,12 @@ export default function App() {
         onOpenVictimModal={() => setShowVictimModal(true)}
         onOpenSOSModal={() => setShowSOSModal(true)}
         onOpenWhistleblowerModal={() => setShowWhistleblowerModal(true)}
+        deviceMode={deviceMode}
+        onToggleDeviceMode={handleToggleDeviceMode}
       />
 
       {/* Main Content View Frame */}
-      <main className="flex-1 px-3 sm:px-4 pt-3 max-w-md mx-auto w-full">
+      <main className={`flex-1 px-3 sm:px-4 pt-3 ${deviceMode === 'laptop' ? 'max-w-5xl' : 'max-w-md'} mx-auto w-full transition-all duration-300`}>
         {activeTab === 'home' && (
           <HomeFeedView
             feedItems={feedItems}
@@ -236,6 +270,7 @@ export default function App() {
       <BottomNav
         activeTab={activeTab === 'legal-rights' || activeTab === 'self-defense' || activeTab === 'response-team' ? 'home' : activeTab}
         setActiveTab={setActiveTab}
+        deviceMode={deviceMode}
       />
 
       {/* Anonymous Victim Report & Takedown Assist Modal */}
