@@ -23,6 +23,7 @@ import { ResponseTeamView } from './components/ResponseTeamView';
 import { AdminDashboardModal } from './components/AdminDashboardModal';
 import { GlobalAIChatbot } from './components/GlobalAIChatbot';
 import { DeviceSelectionModal, DeviceMode } from './components/DeviceSelectionModal';
+import { SpotTheFakeGameModal } from './components/SpotTheFakeGameModal';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('home');
@@ -54,6 +55,7 @@ export default function App() {
   const [showSOSModal, setShowSOSModal] = useState<boolean>(false);
   const [showWhistleblowerModal, setShowWhistleblowerModal] = useState<boolean>(false);
   const [showAdminModal, setShowAdminModal] = useState<boolean>(false);
+  const [showSpotTheFakeModal, setShowSpotTheFakeModal] = useState<boolean>(false);
 
   const [exploreCategory, setExploreCategory] = useState<any>('All');
   const [feedItems, setFeedItems] = useState<FeedItem[]>(initialFeedItems);
@@ -171,6 +173,7 @@ export default function App() {
         onOpenVictimModal={() => setShowVictimModal(true)}
         onOpenSOSModal={() => setShowSOSModal(true)}
         onOpenWhistleblowerModal={() => setShowWhistleblowerModal(true)}
+        onOpenSpotTheFakeModal={() => setShowSpotTheFakeModal(true)}
         deviceMode={deviceMode}
         onToggleDeviceMode={handleToggleDeviceMode}
       />
@@ -190,6 +193,7 @@ export default function App() {
             onOpenSelfDefense={() => setActiveTab('self-defense')}
             onOpenResponseTeam={() => setActiveTab('response-team')}
             onOpenAdminDashboard={() => setShowAdminModal(true)}
+            onOpenSpotTheFakeModal={() => setShowSpotTheFakeModal(true)}
           />
         )}
 
@@ -235,6 +239,7 @@ export default function App() {
             onRewardXP={addXP}
             initialTopicTag={exploreCategory}
             onGoHome={() => setActiveTab('home')}
+            onOpenSpotTheFakeModal={() => setShowSpotTheFakeModal(true)}
           />
         )}
 
@@ -298,6 +303,13 @@ export default function App() {
       <AdminDashboardModal
         isOpen={showAdminModal}
         onClose={() => setShowAdminModal(false)}
+      />
+
+      {/* Spot the Fake — Junior Fact Detectives IQ Game Modal */}
+      <SpotTheFakeGameModal
+        isOpen={showSpotTheFakeModal}
+        onClose={() => setShowSpotTheFakeModal(false)}
+        onAwardXP={addXP}
       />
     </div>
   );

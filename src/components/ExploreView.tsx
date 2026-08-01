@@ -44,6 +44,7 @@ interface ExploreViewProps {
   onRewardXP: (points: number) => void;
   initialTopicTag?: ClaimCategory | 'All';
   onGoHome?: () => void;
+  onOpenSpotTheFakeModal?: () => void;
 }
 
 export const ExploreView: React.FC<ExploreViewProps> = ({
@@ -54,7 +55,8 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   toolkits,
   onRewardXP,
   initialTopicTag = 'All',
-  onGoHome
+  onGoHome,
+  onOpenSpotTheFakeModal
 }) => {
   const [activeModality, setActiveModality] = useState<
     'games' | 'podcasts' | 'comics' | 'documentaries' | 'toolkits' | 'campaigns' | 'map'
@@ -303,15 +305,27 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             .map((game) => (
               <div
                 key={game.id}
-                className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs flex items-start gap-3 hover:border-[#7A1F2B]/40 transition-colors cursor-pointer"
+                className={`bg-white rounded-3xl border p-5 shadow-xs flex items-start gap-3 transition-all cursor-pointer ${
+                  game.id === 'game-spot-the-fake'
+                    ? 'border-amber-400 hover:border-amber-500 bg-gradient-to-r from-amber-50/50 to-white'
+                    : 'border-slate-200 hover:border-[#7A1F2B]/40'
+                }`}
                 onClick={() => {
+                  if (game.id === 'game-spot-the-fake' && onOpenSpotTheFakeModal) {
+                    onOpenSpotTheFakeModal();
+                    return;
+                  }
                   setActiveGameModal(game);
                   setGameStep(0);
                   setGameScore(0);
                 }}
               >
-                <div className="w-11 h-11 rounded-2xl bg-[#7A1F2B]/10 text-[#7A1F2B] flex items-center justify-center shrink-0 mt-0.5">
-                  <Gamepad2 className="w-6 h-6" />
+                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 mt-0.5 ${
+                  game.id === 'game-spot-the-fake'
+                    ? 'bg-amber-100 text-amber-700 font-extrabold text-xl'
+                    : 'bg-[#7A1F2B]/10 text-[#7A1F2B]'
+                }`}>
+                  {game.id === 'game-spot-the-fake' ? '🔍' : <Gamepad2 className="w-6 h-6" />}
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center justify-between mb-1">

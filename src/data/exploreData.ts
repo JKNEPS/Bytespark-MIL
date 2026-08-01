@@ -9,6 +9,16 @@ import {
 
 export const sampleGames: MiniGame[] = [
   {
+    id: 'game-spot-the-fake',
+    title: 'Spot the Fake — Junior Fact Detectives (Check Your IQ)',
+    description: 'Check your Media Literacy IQ! Spot false information across Easy, Medium, Hard & Extreme detective levels with 64 real-world cases.',
+    category: 'General',
+    durationMinutes: 5,
+    iconName: 'Search',
+    difficulty: 'Beginner',
+    playCount: 9480
+  },
+  {
     id: 'game-1',
     title: 'Spot the Deepfake',
     description: 'Compare 5 side-by-side face renders. Spot subtle skin blending artifacts, asymmetry, and reflection errors!',

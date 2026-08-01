@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, ShieldAlert, CheckCircle2, MessageSquare, Heart, ArrowUpRight, Filter, Sparkles, AlertTriangle, EyeOff, Lock, ArrowRight, Megaphone, Scale, ShieldCheck, Users, Shield } from 'lucide-react';
+import { Search, ShieldAlert, CheckCircle2, MessageSquare, Heart, ArrowUpRight, Filter, Sparkles, AlertTriangle, EyeOff, Lock, ArrowRight, Megaphone, Scale, ShieldCheck, Users, Shield, ChevronRight } from 'lucide-react';
 import { FeedItem, ClaimCategory, FeedArticle } from '../types';
 import { PrebunkQuizCard } from './PrebunkQuizCard';
 
@@ -15,6 +15,7 @@ interface HomeFeedViewProps {
   onOpenSelfDefense?: () => void;
   onOpenResponseTeam?: () => void;
   onOpenAdminDashboard?: () => void;
+  onOpenSpotTheFakeModal?: () => void;
 }
 
 export const HomeFeedView: React.FC<HomeFeedViewProps> = ({
@@ -28,7 +29,8 @@ export const HomeFeedView: React.FC<HomeFeedViewProps> = ({
   onOpenLegalRights,
   onOpenSelfDefense,
   onOpenResponseTeam,
-  onOpenAdminDashboard
+  onOpenAdminDashboard,
+  onOpenSpotTheFakeModal
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<ClaimCategory | 'All'>('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -86,6 +88,15 @@ export const HomeFeedView: React.FC<HomeFeedViewProps> = ({
               <ShieldAlert className="w-4 h-4 text-[#7A1F2B]" />
               <span>Verify a Claim</span>
             </button>
+            {onOpenSpotTheFakeModal && (
+              <button
+                onClick={onOpenSpotTheFakeModal}
+                className="inline-flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-900 font-extrabold text-xs px-3.5 py-2.5 rounded-xl shadow-xs transition-all uppercase tracking-wider cursor-pointer"
+              >
+                <span>🔍</span>
+                <span>Spot the Fake IQ Game</span>
+              </button>
+            )}
             {onOpenSOSModal && (
               <button
                 onClick={onOpenSOSModal}
@@ -98,6 +109,37 @@ export const HomeFeedView: React.FC<HomeFeedViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Featured Spot the Fake IQ Game Banner */}
+      {onOpenSpotTheFakeModal && (
+        <div
+          onClick={onOpenSpotTheFakeModal}
+          className="bg-gradient-to-r from-[#16233F] via-[#1F3358] to-[#16233F] border-2 border-amber-500/40 hover:border-amber-400 text-[#FBF3E3] rounded-2xl p-4 shadow-md transition-all cursor-pointer flex items-center justify-between gap-3 group"
+        >
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#F5B942] to-amber-600 flex items-center justify-center text-slate-900 font-extrabold text-2xl shadow-sm shrink-0 group-hover:scale-105 transition-transform">
+              🔍
+            </div>
+            <div>
+              <div className="inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-widest text-[#4FB6E8] mb-0.5">
+                <span>Check Your Media Literacy IQ</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                <span className="text-amber-300">64 Cases</span>
+              </div>
+              <h3 className="text-sm sm:text-base font-extrabold text-white leading-tight">
+                Spot the Fake — Junior Fact Detectives
+              </h3>
+              <p className="text-xs text-[#FBF3E3]/70 font-medium line-clamp-1">
+                Spot misleading headlines, false stats & viral hoaxes across Easy to Extreme detective levels.
+              </p>
+            </div>
+          </div>
+          <div className="shrink-0 flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-900 text-xs font-extrabold px-3.5 py-2 rounded-xl transition-colors shadow-xs">
+            <span>Play Now</span>
+            <ChevronRight className="w-4 h-4" />
+          </div>
+        </div>
+      )}
 
       {/* Persistent Emergency SOS High-Contrast Bar */}
       {onOpenSOSModal && (

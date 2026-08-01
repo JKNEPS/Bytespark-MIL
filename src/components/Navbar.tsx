@@ -13,6 +13,7 @@ interface NavbarProps {
   onOpenVictimModal?: () => void;
   onOpenSOSModal?: () => void;
   onOpenWhistleblowerModal?: () => void;
+  onOpenSpotTheFakeModal?: () => void;
   deviceMode?: 'laptop' | 'mobile';
   onToggleDeviceMode?: () => void;
 }
@@ -27,6 +28,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenVictimModal,
   onOpenSOSModal,
   onOpenWhistleblowerModal,
+  onOpenSpotTheFakeModal,
   deviceMode = 'mobile',
   onToggleDeviceMode
 }) => {
@@ -134,6 +136,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               ))}
             </select>
           </div>
+
+          {/* Spot the Fake IQ Game Button */}
+          {onOpenSpotTheFakeModal && (
+            <button
+              onClick={onOpenSpotTheFakeModal}
+              title="Spot the Fake — Check Your Media Literacy IQ"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-500 to-[#7A1F2B] hover:from-amber-600 hover:to-[#5A131E] text-white text-[10px] font-extrabold uppercase tracking-wider shadow-xs transition-all"
+            >
+              <span className="text-xs">🔍</span>
+              <span>IQ Game</span>
+            </button>
+          )}
 
           {/* Emergency SOS High Priority Pill */}
           {onOpenSOSModal && (

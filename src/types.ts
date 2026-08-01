@@ -129,6 +129,7 @@ export interface MiniGame {
   iconName: string;
   difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
   playCount: number;
+  externalUrl?: string;
 }
 
 export interface PodcastEpisode {
