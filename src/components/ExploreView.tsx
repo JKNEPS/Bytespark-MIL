@@ -47,6 +47,37 @@ interface ExploreViewProps {
   onOpenSpotTheFakeModal?: () => void;
 }
 
+const ExploreImageWithFallback: React.FC<{ imageUrl: string; title: string; category: string }> = ({ imageUrl, title, category }) => {
+  const [imgSrc, setImgSrc] = useState(imageUrl);
+  const [hasError, setHasError] = useState(false);
+
+  const handleError = () => {
+    if (!hasError) {
+      setHasError(true);
+    }
+  };
+
+  if (hasError) {
+    return (
+      <div className="w-full h-full bg-gradient-to-br from-slate-900 via-[#7A1F2B]/80 to-slate-800 flex flex-col items-center justify-center p-4 text-center text-white">
+        <Sparkles className="w-8 h-8 text-amber-400 mb-1" />
+        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300 mb-0.5">{category}</span>
+        <p className="text-xs font-bold line-clamp-1 px-2 text-white/90">{title}</p>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={imgSrc}
+      alt={title}
+      className="w-full h-full object-cover group-hover:scale-103 transition-transform"
+      referrerPolicy="no-referrer"
+      onError={handleError}
+    />
+  );
+};
+
 export const ExploreView: React.FC<ExploreViewProps> = ({
   games,
   podcasts,
@@ -456,10 +487,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 className="bg-white rounded-2xl border border-[#E0E0E0] p-4 shadow-xs overflow-hidden cursor-pointer hover:border-[#7A1F2B]/40 transition-colors group"
               >
                 <div className="relative rounded-xl overflow-hidden aspect-video mb-2.5 bg-slate-100">
-                  <img
-                    src={comic.coverImage}
-                    alt={comic.title}
-                    className="w-full h-full object-cover group-hover:scale-103 transition-transform"
+                  <ExploreImageWithFallback
+                    imageUrl={comic.coverImage}
+                    title={comic.title}
+                    category={comic.category}
                   />
                   <div className="absolute top-2 left-2 bg-slate-900/80 text-white text-[10px] font-bold px-2 py-0.5 rounded border border-white/20 uppercase">
                     Instagram-Story Style
@@ -493,10 +524,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 className="bg-white rounded-2xl border border-[#E0E0E0] p-4 shadow-xs space-y-2 cursor-pointer hover:border-[#7A1F2B]/40 transition-colors"
               >
                 <div className="relative rounded-xl overflow-hidden aspect-video bg-slate-900 flex items-center justify-center">
-                  <img
-                    src={doc.videoPlaceholderUrl}
-                    alt={doc.title}
-                    className="w-full h-full object-cover opacity-80"
+                  <ExploreImageWithFallback
+                    imageUrl={doc.videoPlaceholderUrl}
+                    title={doc.title}
+                    category={doc.category}
                   />
                   <div className="absolute w-12 h-12 rounded-full bg-[#7A1F2B] text-white flex items-center justify-center shadow-lg border border-white">
                     <Play className="w-5 h-5 fill-white ml-0.5" />

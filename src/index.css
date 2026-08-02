@@ -38,3 +38,63 @@
   scrollbar-width: none;
 }
 
+/* ==========================================================================
+   Responsive Mobile-in-Laptop/Desktop Wrapper Behavior (Pure CSS Media Queries)
+   ========================================================================== */
+html, body, #root {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+/* Mobile (< 768px): Behaves exactly as default, full width */
+.app-shell {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-container {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0 auto;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Tablet / Laptop / Desktop (>= 768px): Center like a phone screen floating on page */
+@media (min-width: 768px) {
+  html, body, #root, .app-shell {
+    background-color: #E2E8F0 !important; /* Neutral light gray background outside the app container */
+  }
+
+  .app-shell {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    width: 100%;
+    padding: 0;
+  }
+
+  .app-container {
+    max-width: 430px; /* Typical phone width */
+    width: 100%;
+    min-height: 100vh;
+    margin: 0 auto;
+    background-color: #F5F5F5; /* App background color */
+    box-shadow: 
+      0 0 0 1px rgba(0, 0, 0, 0.05),
+      0 20px 25px -5px rgba(0, 0, 0, 0.15),
+      0 10px 10px -5px rgba(0, 0, 0, 0.08); /* Subtle phone floating box shadow */
+    position: relative;
+    overflow-x: hidden;
+    transform: translateZ(0); /* Ensures fixed-position elements (navbars, modals) stay inside the 430px phone screen */
+  }
+}
+

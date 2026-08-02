@@ -18,6 +18,60 @@ interface HomeFeedViewProps {
   onOpenSpotTheFakeModal?: () => void;
 }
 
+const FeedImageWithFallback: React.FC<{ imageUrl: string; title: string; category: string }> = ({ imageUrl, title, category }) => {
+  const [imgSrc, setImgSrc] = useState(imageUrl);
+  const [hasError, setHasError] = useState(false);
+
+  const categoryFallbacks: Record<string, string> = {
+    'Climate': 'https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?auto=format&fit=crop&w=800&q=80',
+    'Deepfakes': 'https://images.unsplash.com/photo-1511739001486-6bfe10ce785f?auto=format&fit=crop&w=800&q=80',
+    'Satire': 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&w=800&q=80',
+    'Elections': 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80',
+    'default': 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=800&q=80'
+  };
+
+  const handleError = () => {
+    const fallback = categoryFallbacks[category] || categoryFallbacks.default;
+    if (imgSrc !== fallback && !hasError) {
+      setImgSrc(fallback);
+    } else {
+      setHasError(true);
+    }
+  };
+
+  if (hasError) {
+    return (
+      <div className="relative rounded-xl overflow-hidden aspect-video bg-gradient-to-br from-slate-900 via-[#7A1F2B]/80 to-slate-800 border border-slate-700 flex flex-col items-center justify-center p-6 text-center text-white">
+        <ShieldAlert className="w-9 h-9 text-amber-400 mb-2" />
+        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300 bg-amber-900/40 px-2.5 py-0.5 rounded-full mb-1">
+          {category} Media Inspection
+        </span>
+        <p className="text-xs font-bold line-clamp-2 px-2 text-white/90">{title}</p>
+        <div className="absolute top-2 right-2 bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+          <ShieldAlert className="w-3 h-3 text-amber-400" />
+          <span>Viral Claim</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative rounded-xl overflow-hidden aspect-video bg-slate-100 border border-slate-200">
+      <img
+        src={imgSrc}
+        alt={title}
+        className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300"
+        referrerPolicy="no-referrer"
+        onError={handleError}
+      />
+      <div className="absolute top-2 right-2 bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+        <ShieldAlert className="w-3 h-3 text-amber-400" />
+        <span>Viral Claim</span>
+      </div>
+    </div>
+  );
+};
+
 export const HomeFeedView: React.FC<HomeFeedViewProps> = ({
   feedItems,
   onVerifyClaim,
@@ -325,18 +379,11 @@ export const HomeFeedView: React.FC<HomeFeedViewProps> = ({
               </div>
 
               {article.imageUrl && (
-                <div className="relative rounded-xl overflow-hidden aspect-video bg-slate-100 border border-slate-200">
-                  <img
-                    src={article.imageUrl}
-                    alt={article.title}
-                    className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300"
-                    referrerPolicy="no-referrer"
-                  />
-                  <div className="absolute top-2 right-2 bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <ShieldAlert className="w-3 h-3 text-amber-400" />
-                    <span>Viral Claim</span>
-                  </div>
-                </div>
+                <FeedImageWithFallback
+                  imageUrl={article.imageUrl}
+                  title={article.title}
+                  category={article.category}
+                />
               )}
 
               <div>

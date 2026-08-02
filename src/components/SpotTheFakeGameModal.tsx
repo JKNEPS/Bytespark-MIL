@@ -250,14 +250,14 @@ function buildOrder(diffKey: Difficulty): GameCase[] {
           source: LEVEL_META[li].source
         } as BinaryCase);
       } else if (q.mode === 'chooseFake') {
-        const idxArr = q.statements.map((_: any, i: number) => i);
-        const shuffled = shuffleArray(idxArr);
+        const idxArr: number[] = q.statements.map((_: any, i: number) => i);
+        const shuffled = shuffleArray<number>(idxArr);
         rounds.push({
           ...q,
           levelNum: li + 1,
           levelTitle: LEVEL_META[li].title,
           source: LEVEL_META[li].source,
-          displayStatements: shuffled.map((i) => q.statements[i]),
+          displayStatements: shuffled.map((i: number) => q.statements[i]),
           correctDisplayIndex: shuffled.indexOf(q.lieIndex)
         } as ChooseFakeCase);
       }

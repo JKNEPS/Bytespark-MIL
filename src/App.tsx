@@ -161,9 +161,10 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F5F5F5] text-slate-900 flex flex-col font-sans selection:bg-[#7A1F2B] selection:text-white">
-      {/* Top Mobile Navbar */}
-      <Navbar
+    <div className="app-shell">
+      <div className="app-container min-h-screen bg-[#F5F5F5] text-slate-900 flex flex-col font-sans selection:bg-[#7A1F2B] selection:text-white relative">
+        {/* Top Mobile Navbar */}
+        <Navbar
         userProfile={userProfile}
         currentLanguage={currentLanguage}
         onLanguageChange={setCurrentLanguage}
@@ -311,6 +312,7 @@ export default function App() {
         onClose={() => setShowSpotTheFakeModal(false)}
         onAwardXP={addXP}
       />
+      </div>
     </div>
   );
 }

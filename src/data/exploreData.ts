@@ -89,7 +89,7 @@ export const sampleComics: ComicStory[] = [
     title: 'The Illusion of Consensus',
     subtitle: 'How bot networks fake viral popularity',
     category: 'AI Ethics',
-    coverImage: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80',
+    coverImage: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=800&q=80',
     slides: [
       {
         panelNumber: 1,
@@ -147,7 +147,7 @@ export const sampleDocumentaries: DocumentaryItem[] = [
     duration: '8 mins',
     category: 'Deepfakes',
     summary: 'An investigation into how generative video models work, how detection algorithms spot pixel glitches, and how youth creators protect media integrity.',
-    videoPlaceholderUrl: 'https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?auto=format&fit=crop&w=800&q=80',
+    videoPlaceholderUrl: 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?auto=format&fit=crop&w=800&q=80',
     keyTakeaways: [
       'Generative video creates temporal incoherence in eye blinking & shadow movement',
       'Watermarking standards like C2PA embed cryptographic provenance in media',
@@ -161,7 +161,7 @@ export const sampleDocumentaries: DocumentaryItem[] = [
     duration: '12 mins',
     category: 'Elections',
     summary: 'Documenting student-led fact-checking newsrooms in Kenya, Indonesia, and Brazil operating during national youth elections.',
-    videoPlaceholderUrl: 'https://images.unsplash.com/photo-1526470608268-f674ce90ebd4?auto=format&fit=crop&w=800&q=80',
+    videoPlaceholderUrl: 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?auto=format&fit=crop&w=800&q=80',
     keyTakeaways: [
       'Peer-to-peer prebunking builds resilient community immunity against rumors',
       'Visual explainers in native dialects reach 3x more students than formal text reports'
