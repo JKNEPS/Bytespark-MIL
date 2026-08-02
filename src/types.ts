@@ -156,6 +156,10 @@ export interface ComicStory {
     description: string;
     imagePromptText: string;
     milLesson: string;
+    speechBubbleText?: string;
+    speechBubbleType?: 'speech' | 'thought' | 'exclamation';
+    speaker?: string;
+    customSceneId?: string;
   }[];
 }
 

@@ -34,6 +34,7 @@ import {
   ClaimCategory
 } from '../types';
 import confetti from 'canvas-confetti';
+import { FactAffectComicModal } from './FactAffectComicModal';
 
 interface ExploreViewProps {
   games: MiniGame[];
@@ -113,7 +114,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
   // Comic Viewer State
   const [activeComic, setActiveComic] = useState<ComicStory | null>(null);
-  const [comicSlideIndex, setComicSlideIndex] = useState(0);
 
   // Toolkit Viewer Modal State
   const [activeToolkit, setActiveToolkit] = useState<EducationalToolkit | null>(null);
@@ -482,7 +482,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 key={comic.id}
                 onClick={() => {
                   setActiveComic(comic);
-                  setComicSlideIndex(0);
                 }}
                 className="bg-white rounded-2xl border border-[#E0E0E0] p-4 shadow-xs overflow-hidden cursor-pointer hover:border-[#7A1F2B]/40 transition-colors group"
               >
@@ -847,64 +846,11 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
       {/* COMIC STORY SWIPE MODAL */}
       {activeComic && (
-        <div className="fixed inset-0 z-50 bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-5 max-w-sm w-full space-y-3 relative shadow-2xl">
-            <button
-              onClick={() => setActiveComic(null)}
-              className="absolute top-4 right-4 p-1.5 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 z-10"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <div className="flex items-center gap-1.5 text-[10px] font-bold text-[#7A1F2B] uppercase">
-              <BookOpen className="w-3.5 h-3.5" />
-              <span>{activeComic.title} • Slide {comicSlideIndex + 1} of {activeComic.slides.length}</span>
-            </div>
-
-            {/* Active Panel */}
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs space-y-2">
-              <h4 className="font-bold text-slate-900 text-sm">
-                {activeComic.slides[comicSlideIndex].title}
-              </h4>
-              <p className="text-slate-700 leading-relaxed">
-                {activeComic.slides[comicSlideIndex].description}
-              </p>
-              <div className="bg-[#FDF2F4] p-2.5 rounded-xl border border-[#7A1F2B]/20 text-xs text-[#7A1F2B] font-bold">
-                💡 MIL Lesson: {activeComic.slides[comicSlideIndex].milLesson}
-              </div>
-            </div>
-
-            {/* Navigation buttons */}
-            <div className="flex items-center justify-between pt-2">
-              <button
-                disabled={comicSlideIndex === 0}
-                onClick={() => setComicSlideIndex((prev) => prev - 1)}
-                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 text-slate-600 disabled:opacity-40"
-              >
-                ← Previous
-              </button>
-              {comicSlideIndex < activeComic.slides.length - 1 ? (
-                <button
-                  onClick={() => setComicSlideIndex((prev) => prev + 1)}
-                  className="px-4 py-1.5 rounded-xl text-xs font-bold bg-[#7A1F2B] text-white"
-                >
-                  Next Panel →
-                </button>
-              ) : (
-                <button
-                  onClick={() => {
-                    confetti({ particleCount: 30 });
-                    onRewardXP(25);
-                    setActiveComic(null);
-                  }}
-                  className="px-4 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 text-white"
-                >
-                  Finish & Claim +25 XP
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+        <FactAffectComicModal
+          comic={activeComic}
+          onClose={() => setActiveComic(null)}
+          onRewardXP={onRewardXP}
+        />
       )}
 
       {/* TOOLKIT VIEWER MODAL */}

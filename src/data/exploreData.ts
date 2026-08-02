@@ -85,6 +85,70 @@ export const samplePodcasts: PodcastEpisode[] = [
 
 export const sampleComics: ComicStory[] = [
   {
+    id: 'comic-fact-affect',
+    title: 'The Fact-Affect Hero',
+    subtitle: 'Somewhere, someone is about to believe a lie. Not on my watch.',
+    category: 'Elections',
+    coverImage: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=800&q=80',
+    slides: [
+      {
+        panelNumber: 1,
+        title: 'Page 1 — Introduction',
+        description: 'Young superhero Fact Detective, wearing a blue cape with a magnifying glass emblem, stands on a rooftop at sunrise overlooking a small town.',
+        imagePromptText: 'Young superhero Fact Detective, wearing a blue cape with a magnifying glass emblem, stands on a rooftop at sunrise overlooking a small town.',
+        milLesson: 'Always be vigilant! Misinformation spreads when people aren’t watching out for fake news.',
+        speechBubbleText: 'Somewhere, someone is about to believe a lie. Not on my watch.',
+        speechBubbleType: 'thought',
+        speaker: 'Fact Detective',
+        customSceneId: 'fact-affect-1'
+      },
+      {
+        panelNumber: 2,
+        title: 'Page 2 — Villain Reveal',
+        description: 'Mister Misinformation, a sneaky cartoonish villain in a patchwork coat covered in tiny fake newspaper clippings, grins while typing on a glowing laptop shooting out speech bubbles full of exclamation points.',
+        imagePromptText: 'Mister Misinformation, a sneaky cartoonish villain in a patchwork coat covered in tiny fake newspaper clippings, grins while typing on a glowing laptop shooting out speech bubbles full of exclamation points.',
+        milLesson: 'Fake news creators often use sensational headlines and lots of exclamation points to trigger strong emotions.',
+        speechBubbleText: 'Hehe... one fake headline, coming right up!',
+        speechBubbleType: 'exclamation',
+        speaker: 'Mister Misinformation',
+        customSceneId: 'fact-affect-2'
+      },
+      {
+        panelNumber: 3,
+        title: 'Page 3 — Confrontation',
+        description: 'Fact Detective bursts into a classroom where three curious kids stare worriedly at a phone showing a shocking fake headline.',
+        imagePromptText: 'Fact Detective bursts into a classroom where three curious kids stare worriedly at a phone showing a shocking fake headline.',
+        milLesson: 'Never share a shocking post immediately. Stop, breathe, and check where the information came from.',
+        speechBubbleText: 'Wait, let\'s check the source before we believe it.',
+        speechBubbleType: 'speech',
+        speaker: 'Fact Detective',
+        customSceneId: 'fact-affect-3'
+      },
+      {
+        panelNumber: 4,
+        title: 'Page 4 — The Lesson',
+        description: 'Fact Detective and the three kids gather around a glowing checklist with three icons, a magnifying glass, a question mark, and a checkmark.',
+        imagePromptText: 'Fact Detective and the three kids gather around a glowing checklist with three icons, a magnifying glass, a question mark, and a checkmark.',
+        milLesson: 'Use the 3-step check: 1) Who is the source? 2) Why are they saying it? 3) Is there real evidence?',
+        speechBubbleText: 'Check the source, ask who said it, and look for proof.',
+        speechBubbleType: 'speech',
+        speaker: 'Fact Detective',
+        customSceneId: 'fact-affect-4'
+      },
+      {
+        panelNumber: 5,
+        title: 'Page 5 — Ending',
+        description: 'Fact Detective and the kids hold up a glowing shield of checkmarks as Mister Misinformation shrinks away, his fake headlines turning to dust.',
+        imagePromptText: 'Fact Detective and the kids hold up a glowing shield of checkmarks as Mister Misinformation shrinks away, his fake headlines turning to dust.',
+        milLesson: 'When we fact-check together, misinformation loses its power!',
+        speechBubbleText: 'We checked the facts and beat the fake news! — Great job, Fact Detectives!',
+        speechBubbleType: 'speech',
+        speaker: 'Kid & Fact Detective',
+        customSceneId: 'fact-affect-5'
+      }
+    ]
+  },
+  {
     id: 'comic-1',
     title: 'The Illusion of Consensus',
     subtitle: 'How bot networks fake viral popularity',
