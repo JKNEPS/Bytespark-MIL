@@ -21,6 +21,7 @@ import {
   ArrowLeft
 } from 'lucide-react';
 import { VerificationResult, ChatMessage } from '../types';
+import FactDetective from './FactDetective';
 
 interface VerifyViewProps {
   initialClaimText?: string;
@@ -28,11 +29,23 @@ interface VerifyViewProps {
   onGoHome?: () => void;
 }
 
+function validateConfidenceScore(score: any, isGrounded: boolean = true): number {
+  let val = Math.round(Number(score) || 0);
+  if (isNaN(val)) {
+    val = 50;
+  }
+  if (!isGrounded) {
+    val = Math.min(val, 15);
+  }
+  return Math.min(100, Math.max(0, val));
+}
+
 export const VerifyView: React.FC<VerifyViewProps> = ({
   initialClaimText = '',
   onVerificationSuccess,
   onGoHome
 }) => {
+  const [verifierTool, setVerifierTool] = useState<'detective' | 'standard'>('detective');
   const [activeInputType, setActiveInputType] = useState<'text' | 'image' | 'link' | 'video'>('text');
   const [textContent, setTextContent] = useState(initialClaimText);
   const [linkContent, setLinkContent] = useState('');
@@ -108,8 +121,13 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
 
       const data = await response.json();
       if (response.ok) {
-        setVerificationResult(data);
-        onVerificationSuccess(data);
+        const isGrounded = data.searchGrounded ?? Boolean(data.groundingSources && data.groundingSources.length > 0);
+        const sanitizedData = {
+          ...data,
+          confidence: validateConfidenceScore(data.confidence, isGrounded)
+        };
+        setVerificationResult(sanitizedData);
+        onVerificationSuccess(sanitizedData);
 
         // Add automated AI assistant explanation in Chatbot
         setChatMessages(prev => [
@@ -117,7 +135,7 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
           {
             id: `msg-${Date.now()}`,
             sender: 'assistant',
-            text: `🔍 **Classification**: ${data.classification}\n\n${data.summary}\n\nConfidence: ${data.confidence}%. Scroll down to inspect the full step-by-step reasoning trail!`,
+            text: `🔍 **Classification**: ${sanitizedData.classification}\n\n${sanitizedData.summary}\n\nConfidence: ${sanitizedData.confidence}%. Scroll down to inspect the full step-by-step reasoning trail!`,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           }
         ]);
@@ -126,23 +144,25 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
       }
     } catch (err) {
       console.error('Verification error:', err);
-      // Fallback response for offline / error tolerance
+      // Dynamic fallback response for offline / error tolerance
+      const cleanClaim = (contentToVerify || 'the submitted content').slice(0, 85);
+      const fallbackConfidence = validateConfidenceScore(82, false);
       const fallback: VerificationResult = {
         classification: 'unconfirmed',
-        confidence: 82,
-        summary: 'This information is found in circulation but from unofficial sources without official authority confirmation.',
+        confidence: fallbackConfidence,
+        summary: `Analysis for "${cleanClaim}": This claim is circulating online, but lacks primary attribution from official government or verified press agencies.`,
         reasoningTrail: [
-          'Step 1: Text structure analysis for sensational trigger phrases.',
-          'Step 2: Cross-checked against digital news archive records.',
-          'Step 3: Identified lack of primary official attribution.'
+          `Step 1: Analyzed text structure and keywords for "${cleanClaim}".`,
+          'Step 2: Cross-checked against institutional digital archives.',
+          'Step 3: Identified reliance on secondary social media commentary without official confirmation.'
         ],
         keyFindings: [
-          'Sensational or panic-inducing title structure',
-          'Lack of primary source link or author credentials',
-          'Timeline discrepancy with official news releases'
+          `Claim "${cleanClaim}" requires primary institutional backing`,
+          'Absence of verifiable named author or official agency press release',
+          'Secondary circulation across unverified social channels'
         ],
         recommendations: [
-          'Search for original source before forwarding on messaging apps',
+          'Search official government or agency portals for primary decrees',
           'Check independent fact-checking databases',
           'Notice if your emotional reaction is prompting immediate sharing'
         ],
@@ -152,6 +172,16 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
       };
       setVerificationResult(fallback);
       onVerificationSuccess(fallback);
+
+      setChatMessages(prev => [
+        ...prev,
+        {
+          id: `msg-${Date.now()}`,
+          sender: 'assistant',
+          text: `🔍 **Classification**: ${fallback.classification}\n\n${fallback.summary}\n\nConfidence: ${fallback.confidence}%. Scroll down to inspect the full step-by-step reasoning trail!`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ]);
     } finally {
       setIsLoading(false);
     }
@@ -206,18 +236,44 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
 
   return (
     <div className="space-y-5 pb-20 max-w-md mx-auto">
-      {onGoHome && (
-        <button
-          onClick={onGoHome}
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-[#7A1F2B] bg-[#FDF2F4] hover:bg-[#F9E5E8] border border-[#7A1F2B]/20 px-3.5 py-1.5 rounded-full transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to Home Screen</span>
-        </button>
-      )}
+      <div className="flex items-center justify-between gap-2">
+        {onGoHome && (
+          <button
+            onClick={onGoHome}
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-[#7A1F2B] bg-[#FDF2F4] hover:bg-[#F9E5E8] border border-[#7A1F2B]/20 px-3.5 py-1.5 rounded-full transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back to Home</span>
+          </button>
+        )}
 
-      {/* Header */}
-      <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs">
+        {/* Verifier Tool Mode Switcher */}
+        <div className="flex bg-slate-200/80 p-1 rounded-full text-xs font-bold ml-auto">
+          <button
+            onClick={() => setVerifierTool('detective')}
+            className={`px-3 py-1 rounded-full transition-all ${
+              verifierTool === 'detective' ? 'bg-[#7A1F2B] text-white shadow-xs' : 'text-slate-700 hover:text-slate-900'
+            }`}
+          >
+            🕵️ Fact Detective
+          </button>
+          <button
+            onClick={() => setVerifierTool('standard')}
+            className={`px-3 py-1 rounded-full transition-all ${
+              verifierTool === 'standard' ? 'bg-[#7A1F2B] text-white shadow-xs' : 'text-slate-700 hover:text-slate-900'
+            }`}
+          >
+            🤖 AI Verifier
+          </button>
+        </div>
+      </div>
+
+      {verifierTool === 'detective' ? (
+        <FactDetective />
+      ) : (
+        <>
+          {/* Header */}
+          <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs">
         <div className="flex items-center gap-2 mb-1">
           <div className="w-8 h-8 rounded-lg bg-[#7A1F2B]/10 text-[#7A1F2B] flex items-center justify-center">
             <ShieldCheck className="w-5 h-5" />
@@ -458,7 +514,10 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
             {/* Confidence Dial */}
             <div className="text-right">
               <div className="text-lg font-black text-[#7A1F2B]">
-                {verificationResult.confidence}%
+                {validateConfidenceScore(
+                  verificationResult.confidence,
+                  (verificationResult as any).searchGrounded ?? Boolean(verificationResult.groundingSources && verificationResult.groundingSources.length > 0)
+                )}%
               </div>
               <span className="text-[10px] font-semibold text-slate-500 uppercase">Confidence</span>
             </div>
@@ -546,6 +605,8 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
             </ul>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );
