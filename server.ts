@@ -436,6 +436,152 @@ function getVerifyFallback(content: string = "", inputType: string = "claim") {
   };
 }
 
+// API endpoint for Strict Fact Verification Assistant with Google Search Grounding and low temperature (0.1)
+app.post("/api/fact-verify", async (req, res) => {
+  const { claim, statement, text } = req.body;
+  const userClaim = claim || statement || text || "";
+
+  if (!userClaim.trim()) {
+    return res.status(400).json({
+      verdict: "UNKNOWN",
+      confidence: "low",
+      reasoning: "No claim or text was provided for verification.",
+      sources: [],
+      ai_generation_likelihood: "not_applicable"
+    });
+  }
+
+  try {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({
+        verdict: "UNKNOWN",
+        confidence: "low",
+        reasoning: "API key is missing in server environment (process.env.GEMINI_API_KEY or process.env.API_KEY).",
+        sources: [],
+        ai_generation_likelihood: "not_applicable"
+      });
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+
+    const systemInstruction = `You are a fact-verification assistant. You will receive a claim, statement, or piece of text from a user. Your job is to analyze it and determine whether it is:
+1. FACTUALLY REAL/VERIFIED - supported by credible, checkable sources
+2. FACTUALLY FALSE/MISLEADING - contradicted by evidence
+3. AI-GENERATED CONTENT - text that shows patterns typical of AI-generated writing (generic phrasing, lack of specific verifiable detail, fabricated citations, invented statistics, or synthetic tone)
+4. UNKNOWN/UNVERIFIABLE - if you do not have grounded, live information to confirm or deny the claim, you MUST say so. Do NOT guess or hallucinate a verdict.
+
+Rules:
+- Never fabricate a source, statistic, or quote to support your verdict.
+- If Google Search grounding is not available or does not return relevant results, respond with UNKNOWN and explain why.
+- Always separate "is this true" from "does this look AI-written" as two distinct judgments — a claim can be true but AI-written, or false but human-written.
+- Cite the specific source(s) you used for your verdict, if any.
+- Keep your response structured and short.
+
+Output strictly in this JSON format:
+{
+  "verdict": "REAL" | "FALSE" | "AI_GENERATED" | "UNKNOWN",
+  "confidence": "high" | "medium" | "low",
+  "reasoning": "2-3 sentence explanation",
+  "sources": ["source1", "source2"] or [],
+  "ai_generation_likelihood": "high" | "medium" | "low" | "not_applicable"
+}
+
+Do not include any text outside the JSON object.`;
+
+    let response: any = null;
+
+    try {
+      console.log(`[fact-verify] Executing Gemini call with gemini-3.6-flash, temperature=0.1, googleSearch=true...`);
+      response = await ai.models.generateContent({
+        model: "gemini-3.6-flash",
+        contents: userClaim,
+        config: {
+          systemInstruction,
+          temperature: 0.1,
+          tools: [{ googleSearch: {} }]
+        }
+      });
+    } catch (primaryErr: any) {
+      console.warn(`[fact-verify] Primary call with search grounding failed:`, primaryErr?.message || primaryErr);
+      try {
+        console.log(`[fact-verify] Fallback call with gemini-3.6-flash without search tool...`);
+        response = await ai.models.generateContent({
+          model: "gemini-3.6-flash",
+          contents: userClaim,
+          config: {
+            systemInstruction,
+            temperature: 0.1
+          }
+        });
+      } catch (fallbackErr: any) {
+        console.error(`[fact-verify] Fallback failed:`, fallbackErr?.message || fallbackErr);
+        const rawErrMsg = fallbackErr?.message || primaryErr?.message || "Service unavailable";
+        let userReasoning = "Google Search grounding was not available or API limit was reached.";
+        if (rawErrMsg.includes("429") || rawErrMsg.includes("RESOURCE_EXHAUSTED") || rawErrMsg.includes("quota")) {
+          userReasoning = "API rate limit reached (429 RESOURCE_EXHAUSTED). Grounded search verification was temporarily unavailable.";
+        }
+        return res.status(200).json({
+          verdict: "UNKNOWN",
+          confidence: "low",
+          reasoning: userReasoning,
+          sources: [],
+          ai_generation_likelihood: "not_applicable"
+        });
+      }
+    }
+
+    const rawText = response?.text || "";
+    let jsonCandidate = rawText.trim();
+    if (jsonCandidate.includes("```")) {
+      jsonCandidate = jsonCandidate.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
+    }
+    const firstBrace = jsonCandidate.indexOf("{");
+    const lastBrace = jsonCandidate.lastIndexOf("}");
+
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      jsonCandidate = jsonCandidate.substring(firstBrace, lastBrace + 1);
+      try {
+        const parsed = JSON.parse(jsonCandidate);
+
+        // Extract grounded sources from metadata if available and not present
+        const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+        if (groundingChunks && Array.isArray(groundingChunks) && groundingChunks.length > 0) {
+          const webSources = groundingChunks
+            .filter((c: any) => c.web && c.web.uri)
+            .map((c: any) => c.web.title ? `${c.web.title} (${c.web.uri})` : c.web.uri);
+          if (webSources.length > 0 && (!parsed.sources || parsed.sources.length === 0)) {
+            parsed.sources = webSources.slice(0, 5);
+          }
+        }
+
+        // Return exact parsed JSON pass-through response
+        return res.json(parsed);
+      } catch (parseErr) {
+        console.error("[fact-verify] Failed to parse JSON from response candidate:", parseErr);
+      }
+    }
+
+    // Fallback pass-through if json parsing failed
+    return res.json({
+      verdict: "UNKNOWN",
+      confidence: "low",
+      reasoning: rawText || "Google Search grounding did not return sufficient verifiable sources to conclude a verdict.",
+      sources: [],
+      ai_generation_likelihood: "not_applicable"
+    });
+  } catch (err: any) {
+    console.error("[fact-verify] Server error:", err);
+    return res.status(500).json({
+      verdict: "UNKNOWN",
+      confidence: "low",
+      reasoning: `Server error while executing fact verification: ${err?.message || "Unknown error"}`,
+      sources: [],
+      ai_generation_likelihood: "not_applicable"
+    });
+  }
+});
+
 // API endpoint for Fact Detective using gemini-3.6-flash or gemini-3.1-pro-preview (for thinking mode) with search grounding
 app.post("/api/fact-detective", async (req, res) => {
   const { mode, claim, url, imageData, mediaType, enableThinking } = req.body;

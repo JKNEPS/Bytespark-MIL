@@ -87,6 +87,7 @@ export default function FactDetective() {
   const [error, setError] = useState<string | null>(null);
   const [rawResponse, setRawResponse] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
+  const [strictVerifyResult, setStrictVerifyResult] = useState<any | null>(null);
   const [isMethodExpanded, setIsMethodExpanded] = useState(false);
   const [showRawTextToggle, setShowRawTextToggle] = useState(false);
 
@@ -190,6 +191,7 @@ export default function FactDetective() {
   async function runInvestigation() {
     setError(null);
     setResult(null);
+    setStrictVerifyResult(null);
     setRawResponse(null);
     setIntelOutput(null);
 
@@ -241,6 +243,22 @@ export default function FactDetective() {
       } else {
         const { data, mediaType } = await fileToBase64(imageFile as File);
         payload = { mode: "image", imageData: data, mediaType };
+      }
+
+      if (tab === "claim" && claimText.trim()) {
+        try {
+          const verifyRes = await fetch("/api/fact-verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ claim: claimText.trim() })
+          });
+          if (verifyRes.ok) {
+            const verifyData = await verifyRes.json();
+            setStrictVerifyResult(verifyData);
+          }
+        } catch (strictErr) {
+          console.warn("Strict fact verify call failed:", strictErr);
+        }
       }
 
       const res = await fetch("/api/fact-detective", {
@@ -521,6 +539,40 @@ export default function FactDetective() {
                 <div style={{ ...styles.barFill, width: `${validateConfidenceScore(result.confidence, result.searchGrounded ?? true)}%` }} />
               </div>
             </div>
+
+            {/* Strict Fact Verification Assistant (Raw JSON Pass-Through Output) */}
+            {strictVerifyResult && (
+              <div style={{
+                marginTop: 18,
+                padding: 14,
+                backgroundColor: "#111827",
+                borderRadius: 8,
+                border: "1px solid #1f2937",
+                color: "#f3f4f6"
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#fbbf24" }}>
+                    🤖 Fact Verification Assistant (Raw JSON Pass-Through Response)
+                  </span>
+                  <span style={{ fontSize: 10, fontFamily: "monospace", color: "#9ca3af", backgroundColor: "#1f2937", padding: "2px 6px", borderRadius: 4 }}>
+                    temp: 0.1 · googleSearch: enabled
+                  </span>
+                </div>
+                <pre style={{
+                  fontSize: 11,
+                  fontFamily: "monospace",
+                  backgroundColor: "#030712",
+                  padding: 12,
+                  borderRadius: 6,
+                  color: "#34d399",
+                  overflowX: "auto",
+                  border: "1px solid #111827",
+                  margin: 0
+                }}>
+                  {JSON.stringify(strictVerifyResult, null, 2)}
+                </pre>
+              </div>
+            )}
 
             {/* Gemini Intelligence Analysis Tools */}
             <div style={styles.intelBox}>

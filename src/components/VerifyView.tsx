@@ -52,6 +52,7 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [mimeType, setMimeType] = useState<string>('image/jpeg');
+  const [rawFactVerifyJson, setRawFactVerifyJson] = useState<any | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
@@ -106,8 +107,24 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
 
     setIsLoading(true);
     setVerificationResult(null);
+    setRawFactVerifyJson(null);
 
     try {
+      // Execute strict fact verification call with low temperature (0.1) & Google Search Grounding
+      try {
+        const strictRes = await fetch('/api/fact-verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ claim: contentToVerify })
+        });
+        if (strictRes.ok) {
+          const strictData = await strictRes.json();
+          setRawFactVerifyJson(strictData);
+        }
+      } catch (strictErr) {
+        console.warn('Strict fact verify call error:', strictErr);
+      }
+
       const response = await fetch('/api/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -522,6 +539,24 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
               <span className="text-[10px] font-semibold text-slate-500 uppercase">Confidence</span>
             </div>
           </div>
+
+          {/* Strict Fact Verification Assistant (Raw JSON Pass-Through Output) */}
+          {rawFactVerifyJson && (
+            <div className="bg-slate-900 text-slate-100 rounded-xl p-3.5 border border-slate-800 shadow-md">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Gemini Fact Verification Assistant (Raw JSON Output)</span>
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                  temp: 0.1 · googleSearch: active
+                </span>
+              </div>
+              <pre className="text-[11px] font-mono leading-relaxed bg-slate-950 p-3 rounded-lg overflow-x-auto text-emerald-400 border border-slate-800/80">
+                {JSON.stringify(rawFactVerifyJson, null, 2)}
+              </pre>
+            </div>
+          )}
 
           {/* Plain Teen-Friendly Explanation */}
           <div className="bg-[#FDF2F4] rounded-xl p-3 border border-[#7A1F2B]/20">
