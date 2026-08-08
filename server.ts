@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
@@ -234,34 +235,49 @@ function extractJsonFromText(rawText: string): any | null {
 async function generateContentWithResilientFallback(
   ai: any,
   options: {
+    model?: string;
     contents: any;
     systemInstruction?: string;
     useGoogleSearch?: boolean;
+    enableThinking?: boolean;
+    temperature?: number;
     responseMimeType?: string;
   }
 ) {
+  const primaryModel = options.model || (options.enableThinking ? "gemini-3.1-pro-preview" : "gemini-3.6-flash");
+
+  // Attempt 1: Primary requested model & configuration
   try {
     const config: any = {
       systemInstruction: options.systemInstruction
     };
+    if (typeof options.temperature === "number") {
+      config.temperature = options.temperature;
+    }
     if (options.useGoogleSearch) {
       config.tools = [{ googleSearch: {} }];
+    }
+    if (options.enableThinking) {
+      config.thinkingConfig = { thinkingBudget: 2048 };
     }
     if (options.responseMimeType) {
       config.responseMimeType = options.responseMimeType;
     }
     return await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: primaryModel,
       contents: options.contents,
       config
     });
-  } catch (firstErr) {
-    // If the first attempt failed (e.g., Google Search grounding tool quota limit 429),
-    // try standard gemini-3.6-flash without Google Search tool
+  } catch (firstErr: any) {
+    console.log(`[gemini-fallback] Primary call (${primaryModel}, googleSearch=${!!options.useGoogleSearch}) hit quota/limit. Trying gemini-3.6-flash without search tool...`);
+    // Attempt 2: Standard gemini-3.6-flash without search tool / thinking
     try {
       const config: any = {
         systemInstruction: options.systemInstruction
       };
+      if (typeof options.temperature === "number") {
+        config.temperature = options.temperature;
+      }
       if (options.responseMimeType) {
         config.responseMimeType = options.responseMimeType;
       }
@@ -270,12 +286,16 @@ async function generateContentWithResilientFallback(
         contents: options.contents,
         config
       });
-    } catch (secondErr) {
-      // Third attempt: try gemini-2.5-flash
+    } catch (secondErr: any) {
+      console.log(`[gemini-fallback] Secondary call hit limit. Trying gemini-2.5-flash...`);
+      // Attempt 3: gemini-2.5-flash fallback
       try {
         const config: any = {
           systemInstruction: options.systemInstruction
         };
+        if (typeof options.temperature === "number") {
+          config.temperature = options.temperature;
+        }
         if (options.responseMimeType) {
           config.responseMimeType = options.responseMimeType;
         }
@@ -284,8 +304,9 @@ async function generateContentWithResilientFallback(
           contents: options.contents,
           config
         });
-      } catch (thirdErr) {
-        return null; // Signals to caller to use clean fallback data without error logging
+      } catch (thirdErr: any) {
+        console.warn(`[gemini-fallback] All Gemini model attempts reached API quota limits (429).`);
+        return null; // Signals caller to return a clean fallback payload without 500
       }
     }
   }
@@ -1119,49 +1140,25 @@ Output strictly in this JSON format:
 
 Do not include any text outside the JSON object.`;
 
-    let response: any = null;
+    const response = await generateContentWithResilientFallback(ai, {
+      model: "gemini-3.6-flash",
+      contents: userClaim,
+      systemInstruction,
+      temperature: 0.1,
+      useGoogleSearch: true
+    });
 
-    try {
-      console.log(`[fact-verify] Executing Gemini call with gemini-3.6-flash, temperature=0.1, googleSearch=true...`);
-      response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: userClaim,
-        config: {
-          systemInstruction,
-          temperature: 0.1,
-          tools: [{ googleSearch: {} }]
-        }
+    if (!response) {
+      const saplingRes = await saplingPromise;
+      return res.status(200).json({
+        verdict: saplingRes && saplingRes.score >= 65 ? "AI_GENERATED" : "UNKNOWN",
+        confidence: "low",
+        reasoning: "API rate/quota limit reached (429 RESOURCE_EXHAUSTED). Grounded search verification is temporarily unavailable. Please try again in a few moments.",
+        sources: [],
+        source: "gemini-search",
+        ai_generation_likelihood: saplingRes ? (saplingRes.score >= 65 ? "high" : saplingRes.score >= 35 ? "medium" : "low") : "not_applicable",
+        sapling_ai_score: saplingRes?.score
       });
-    } catch (primaryErr: any) {
-      console.warn(`[fact-verify] Primary call with search grounding failed:`, primaryErr?.message || primaryErr);
-      try {
-        console.log(`[fact-verify] Fallback call with gemini-3.6-flash without search tool...`);
-        response = await ai.models.generateContent({
-          model: "gemini-3.6-flash",
-          contents: userClaim,
-          config: {
-            systemInstruction,
-            temperature: 0.1
-          }
-        });
-      } catch (fallbackErr: any) {
-        console.error(`[fact-verify] Fallback failed:`, fallbackErr?.message || fallbackErr);
-        const rawErrMsg = fallbackErr?.message || primaryErr?.message || "Service unavailable";
-        let userReasoning = "Google Search grounding was not available or API limit was reached.";
-        if (rawErrMsg.includes("429") || rawErrMsg.includes("RESOURCE_EXHAUSTED") || rawErrMsg.includes("quota")) {
-          userReasoning = "API rate limit reached (429 RESOURCE_EXHAUSTED). Grounded search verification was temporarily unavailable.";
-        }
-        const saplingRes = await saplingPromise;
-        return res.status(200).json({
-          verdict: "UNKNOWN",
-          confidence: "low",
-          reasoning: userReasoning,
-          sources: [],
-          source: "gemini-search",
-          ai_generation_likelihood: saplingRes ? (saplingRes.score >= 65 ? "high" : saplingRes.score >= 35 ? "medium" : "low") : "not_applicable",
-          sapling_ai_score: saplingRes?.score
-        });
-      }
     }
 
     const saplingRes = await saplingPromise;
@@ -1279,78 +1276,24 @@ app.post("/api/fact-detective", async (req, res) => {
       ];
     }
 
-    let response: any = null;
     let groundingMetadata: any = null;
     let searchAttempted = false;
 
-    // Select primary model based on enableThinking option
     const primaryModel = enableThinking ? "gemini-3.1-pro-preview" : "gemini-3.6-flash";
     const useSearchTool = mode === "claim" || mode === "url";
 
-    const fullConfig: any = { systemInstruction };
-    if (useSearchTool) {
-      fullConfig.tools = [{ googleSearch: {} }];
-      searchAttempted = true;
-    }
-
-    if (enableThinking) {
-      fullConfig.thinkingConfig = { thinkingBudget: 2048 };
-    }
-
-    console.log("=== FACT DETECTIVE GENERATE CONTENT CALL CONFIG ===");
-    console.log(JSON.stringify({
+    const response = await generateContentWithResilientFallback(ai, {
       model: primaryModel,
       contents,
-      config: fullConfig
-    }, null, 2));
-    console.log("==================================================");
-
-    try {
-      console.log(`[Fact Detective] Executing generateContent with model=${primaryModel}, googleSearch=${useSearchTool}, thinking=${!!enableThinking}...`);
-      response = await ai.models.generateContent({
-        model: primaryModel,
-        contents,
-        config: fullConfig
-      });
-    } catch (primaryErr: any) {
-      console.warn(`[Fact Detective] Primary search-grounded call failed:`, primaryErr.message || primaryErr);
-      // Secondary attempt: if search tool or thinking config hit error, fallback to standard gemini-3.6-flash without search tool
-      try {
-        console.log(`[Fact Detective] Fallback attempt with gemini-3.6-flash without search tool...`);
-        const fallbackConfig = { systemInstruction };
-        response = await ai.models.generateContent({
-          model: "gemini-3.6-flash",
-          contents,
-          config: fallbackConfig
-        });
-      } catch (secondaryErr: any) {
-        console.error(`[Fact Detective] Secondary attempt failed:`, secondaryErr.message || secondaryErr);
-        const rawErrMsg = secondaryErr.message || primaryErr.message || "Unknown error";
-        let userFriendlyError = rawErrMsg;
-
-        if (rawErrMsg.includes("429") || rawErrMsg.includes("RESOURCE_EXHAUSTED") || rawErrMsg.includes("quota")) {
-          userFriendlyError = "API quota limit reached (429 RESOURCE_EXHAUSTED). Please wait a few seconds and try your request again.";
-        } else {
-          try {
-            const parsed = JSON.parse(rawErrMsg);
-            if (parsed.error?.message) {
-              userFriendlyError = parsed.error.message;
-            }
-          } catch {}
-        }
-
-        return res.status(200).json({
-          success: false,
-          error: userFriendlyError,
-          rawText: null
-        });
-      }
-    }
+      systemInstruction,
+      useGoogleSearch: useSearchTool,
+      enableThinking: !!enableThinking
+    });
 
     if (!response || !response.text) {
-      return res.status(500).json({
+      return res.status(200).json({
         success: false,
-        error: "Gemini returned an empty response.",
+        error: "API rate limit reached (429 RESOURCE_EXHAUSTED). Please wait a few seconds and try your request again.",
         rawText: null
       });
     }
@@ -1480,20 +1423,20 @@ Provide clear, objective, evidence-grounded answers. Use Google Search grounding
       parts: [{ text: m.text }]
     }));
 
-    const config: any = {
-      systemInstruction,
-      tools: [{ googleSearch: {} }]
-    };
-
-    if (enableThinking) {
-      config.thinkingConfig = { thinkingBudget: 2048 };
-    }
-
-    const response = await ai.models.generateContent({
+    const response = await generateContentWithResilientFallback(ai, {
       model,
       contents,
-      config
+      systemInstruction,
+      useGoogleSearch: true,
+      enableThinking: !!enableThinking
     });
+
+    if (!response) {
+      return res.status(200).json({
+        success: false,
+        error: "API rate limit reached (429 RESOURCE_EXHAUSTED). Please wait a few seconds and try your request again."
+      });
+    }
 
     const candidate = response.candidates?.[0];
     const groundingMetadata = candidate?.groundingMetadata || null;
@@ -1557,16 +1500,19 @@ app.post("/api/fact-detective/intel", async (req, res) => {
       return res.status(400).json({ success: false, error: "Unknown intelligence tool specified." });
     }
 
-    const config: any = { systemInstruction };
-    if (useSearch) {
-      config.tools = [{ googleSearch: {} }];
-    }
-
-    const response = await ai.models.generateContent({
+    const response = await generateContentWithResilientFallback(ai, {
       model,
       contents: prompt,
-      config
+      systemInstruction,
+      useGoogleSearch: useSearch
     });
+
+    if (!response) {
+      return res.status(200).json({
+        success: false,
+        error: "API rate limit reached (429 RESOURCE_EXHAUSTED). Please wait a few seconds and try your request again."
+      });
+    }
 
     return res.json({
       success: true,
@@ -2471,6 +2417,11 @@ app.get("/api/repeat-offenders", (req, res) => {
   res.json(resultList);
 });
 
+// Catch-all route for unhandled API endpoints
+app.use("/api/*", (req, res) => {
+  res.status(404).json({ error: "API endpoint not found", path: req.originalUrl });
+});
+
 // Setup Vite for Dev vs Production static serving
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
@@ -2479,11 +2430,37 @@ async function startServer() {
       appType: "spa",
     });
     app.use(vite.middlewares);
+    
+    // SPA fallback in development mode
+    app.get("*", async (req, res, next) => {
+      if (req.method !== "GET" || req.path.startsWith("/api")) {
+        return next();
+      }
+      try {
+        const url = req.originalUrl;
+        const indexPath = path.resolve(process.cwd(), "index.html");
+        if (fs.existsSync(indexPath)) {
+          let template = fs.readFileSync(indexPath, "utf-8");
+          template = await vite.transformIndexHtml(url, template);
+          res.status(200).set({ "Content-Type": "text/html" }).end(template);
+        } else {
+          next();
+        }
+      } catch (e) {
+        vite.ssrFixStacktrace(e as Error);
+        next(e);
+      }
+    });
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      const indexPath = path.join(distPath, "index.html");
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(404).send("Application index.html not found. Please run build.");
+      }
     });
   }
 
