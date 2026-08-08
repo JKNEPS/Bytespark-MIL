@@ -325,6 +325,190 @@ function validateAndClampConfidence(score: any, isGrounded: boolean = true): num
   return Math.min(100, Math.max(0, parsed));
 }
 
+// Simple in-memory quota counter per provider (decrements on each successful call)
+const providerQuota = {
+  sapling: 1000,
+  winston: 1000,
+  edenai: 1000
+};
+
+// Helper function to fetch with timeout (default 8 seconds per call)
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number = 8000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err;
+  }
+}
+
+/**
+ * Sapling AI Detector integration helper.
+ * Queries Sapling API endpoint using process.env.SAPLING_API_KEY.
+ */
+async function checkSaplingAiText(text: string): Promise<{
+  score: number;
+  isAi: boolean;
+  sentenceScores?: any[];
+  raw?: any;
+} | null> {
+  const saplingKey = process.env.SAPLING_API_KEY;
+  const cleanText = (text || "").trim();
+
+  if (!cleanText || cleanText.length < 5 || !saplingKey) {
+    return null;
+  }
+
+  try {
+    const response = await fetchWithTimeout("https://api.sapling.ai/api/v1/aidetect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        key: saplingKey,
+        text: cleanText
+      })
+    }, 8000);
+
+    if (response.ok) {
+      const data = await response.json();
+      providerQuota.sapling = Math.max(0, providerQuota.sapling - 1);
+      let rawScore = typeof data.score === "number" ? data.score : 0;
+      if (rawScore <= 1) {
+        rawScore = Math.round(rawScore * 100);
+      } else {
+        rawScore = Math.round(rawScore);
+      }
+      const score = Math.min(100, Math.max(0, rawScore));
+      return {
+        score,
+        isAi: score >= 50,
+        sentenceScores: data.sentence_scores || [],
+        raw: data
+      };
+    } else {
+      const errText = await response.text();
+      console.warn("[Sapling API] Response error status:", response.status, errText);
+    }
+  } catch (err: any) {
+    console.warn("[Sapling API] Request exception:", err?.message || err);
+  }
+
+  return null;
+}
+
+/**
+ * Fallback chain for AI text detection: Sapling AI -> Winston AI -> Eden AI
+ */
+async function runTextDetectionFallbackChain(text: string) {
+  const cleanText = (text || "").trim();
+  if (!cleanText) {
+    return { verdict: "UNKNOWN", status: "empty_text", reasoning: "No text provided for detection." };
+  }
+
+  // 1) Sapling AI
+  if (process.env.SAPLING_API_KEY && providerQuota.sapling > 0) {
+    try {
+      const saplingResult = await checkSaplingAiText(cleanText);
+      if (saplingResult) {
+        const verdict = saplingResult.score >= 50 ? "AI_GENERATED" : "HUMAN";
+        return {
+          verdict,
+          score: saplingResult.score,
+          isAi: saplingResult.isAi,
+          provider: "sapling",
+          status: "success",
+          details: saplingResult.raw
+        };
+      }
+    } catch (err: any) {
+      console.warn("[detect-text] Sapling provider failed or timed out:", err?.message || err);
+    }
+  }
+
+  // 2) Winston AI
+  if (process.env.WINSTON_API_KEY && providerQuota.winston > 0) {
+    try {
+      const res = await fetchWithTimeout("https://api.gowinston.ai/v2/ai-content-detection", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.WINSTON_API_KEY}`
+        },
+        body: JSON.stringify({ text: cleanText })
+      }, 8000);
+
+      if (res.ok) {
+        const data = await res.json();
+        providerQuota.winston = Math.max(0, providerQuota.winston - 1);
+        let rawScore = typeof data.score === "number" ? data.score : (typeof data.ai_score === "number" ? data.ai_score : 0);
+        const score = Math.round(rawScore <= 1 ? rawScore * 100 : rawScore);
+        const verdict = score >= 50 ? "AI_GENERATED" : "HUMAN";
+        return {
+          verdict,
+          score,
+          isAi: score >= 50,
+          provider: "winston",
+          status: "success",
+          details: data
+        };
+      } else {
+        console.warn("[detect-text] Winston API returned status:", res.status, await res.text());
+      }
+    } catch (err: any) {
+      console.warn("[detect-text] Winston provider failed or timed out:", err?.message || err);
+    }
+  }
+
+  // 3) Eden AI
+  if (process.env.EDENAI_API_KEY && providerQuota.edenai > 0) {
+    try {
+      const res = await fetchWithTimeout("https://api.edenai.run/v2/text/ai_detection", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.EDENAI_API_KEY}`
+        },
+        body: JSON.stringify({ providers: "winstonai", text: cleanText })
+      }, 8000);
+
+      if (res.ok) {
+        const data = await res.json();
+        providerQuota.edenai = Math.max(0, providerQuota.edenai - 1);
+        const winstonResult = data.winstonai || {};
+        let rawScore = typeof winstonResult.ai_score === "number" ? winstonResult.ai_score : (typeof winstonResult.score === "number" ? winstonResult.score : 0);
+        const score = Math.round(rawScore <= 1 ? rawScore * 100 : rawScore);
+        const verdict = score >= 50 ? "AI_GENERATED" : "HUMAN";
+        return {
+          verdict,
+          score,
+          isAi: score >= 50,
+          provider: "edenai",
+          status: "success",
+          details: data
+        };
+      } else {
+        console.warn("[detect-text] Eden AI returned status:", res.status, await res.text());
+      }
+    } catch (err: any) {
+      console.warn("[detect-text] Eden AI provider failed or timed out:", err?.message || err);
+    }
+  }
+
+  // If all three fail or their quota is exhausted:
+  return {
+    verdict: "UNKNOWN",
+    status: "all_providers_failed",
+    reasoning: "All detection providers (Sapling, Winston, Eden AI) failed, were unconfigured, or had exhausted quotas."
+  };
+}
+
 function getVerifyFallback(content: string = "", inputType: string = "claim") {
   const cleanClaim = (content || "").trim();
   const text = cleanClaim.toLowerCase();
@@ -436,6 +620,189 @@ function getVerifyFallback(content: string = "", inputType: string = "claim") {
   };
 }
 
+// GET /api/quota-status — returns remaining quota per provider
+app.get("/api/quota-status", (req, res) => {
+  return res.json({
+    sapling: {
+      remaining: providerQuota.sapling,
+      configured: Boolean(process.env.SAPLING_API_KEY)
+    },
+    winston: {
+      remaining: providerQuota.winston,
+      configured: Boolean(process.env.WINSTON_API_KEY)
+    },
+    edenai: {
+      remaining: providerQuota.edenai,
+      configured: Boolean(process.env.EDENAI_API_KEY)
+    }
+  });
+});
+
+// POST /api/detect-text — detects if submitted text is AI-generated (uses Sapling -> Winston -> Eden AI fallback chain)
+app.post("/api/detect-text", async (req, res) => {
+  const { text, claim, content } = req.body;
+  const targetText = text || claim || content || "";
+
+  if (!targetText.trim()) {
+    return res.status(400).json({
+      verdict: "UNKNOWN",
+      status: "empty_text",
+      error: "No text provided for detection."
+    });
+  }
+
+  const result = await runTextDetectionFallbackChain(targetText);
+  return res.json(result);
+});
+
+// POST /api/detect-image — detects if a submitted image is AI-generated via Winston AI
+app.post("/api/detect-image", async (req, res) => {
+  const { imageUrl, imageBase64, image, url } = req.body;
+  const targetUrl = imageUrl || url || "";
+  const targetBase64 = imageBase64 || image || "";
+
+  if (!targetUrl && !targetBase64) {
+    return res.status(400).json({
+      verdict: "UNKNOWN",
+      status: "missing_image",
+      error: "Please provide either imageUrl or imageBase64 in the request body."
+    });
+  }
+
+  if (process.env.WINSTON_API_KEY && providerQuota.winston > 0) {
+    try {
+      const payload: any = {};
+      if (targetUrl) payload.image_url = targetUrl;
+      if (targetBase64) payload.image_base64 = targetBase64;
+
+      const response = await fetchWithTimeout("https://api.gowinston.ai/v2/ai-image-detection", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.WINSTON_API_KEY}`
+        },
+        body: JSON.stringify(payload)
+      }, 8000);
+
+      if (response.ok) {
+        const data = await response.json();
+        providerQuota.winston = Math.max(0, providerQuota.winston - 1);
+        let rawScore = typeof data.score === "number" ? data.score : (typeof data.ai_score === "number" ? data.ai_score : 0);
+        const score = Math.round(rawScore <= 1 ? rawScore * 100 : rawScore);
+        const verdict = score >= 50 ? "AI_GENERATED" : "HUMAN";
+        return res.json({
+          verdict,
+          score,
+          isAi: score >= 50,
+          provider: "winston",
+          status: "success",
+          details: data
+        });
+      } else {
+        console.warn("[detect-image] Winston AI image detection status:", response.status, await response.text());
+      }
+    } catch (err: any) {
+      console.warn("[detect-image] Winston AI image detection request failed or timed out:", err?.message || err);
+    }
+  }
+
+  return res.json({
+    verdict: "UNKNOWN",
+    status: "all_providers_failed",
+    reasoning: "Winston AI image detection failed, key was unconfigured, or quota was exhausted."
+  });
+});
+
+// POST /api/detect-link — fetches content at a given URL server-side, extracts text, and runs through fallback chain
+app.post("/api/detect-link", async (req, res) => {
+  const { url, link } = req.body;
+  const targetUrl = url || link || "";
+
+  if (!targetUrl || !targetUrl.startsWith("http")) {
+    return res.status(400).json({
+      verdict: "UNKNOWN",
+      status: "invalid_url",
+      error: "Please provide a valid HTTP or HTTPS URL."
+    });
+  }
+
+  try {
+    const htmlRes = await fetchWithTimeout(targetUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) MediaLiteracyVerifier/1.0"
+      }
+    }, 8000);
+
+    if (!htmlRes.ok) {
+      return res.status(400).json({
+        verdict: "UNKNOWN",
+        status: "all_providers_failed",
+        error: `Failed to fetch URL content (HTTP status ${htmlRes.status}).`
+      });
+    }
+
+    const htmlContent = await htmlRes.text();
+    const extractedText = htmlContent
+      .replace(/<script\b[^<]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[^<]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!extractedText || extractedText.length < 15) {
+      return res.json({
+        verdict: "UNKNOWN",
+        status: "all_providers_failed",
+        error: "Extracted text content from URL was empty or too short to analyze."
+      });
+    }
+
+    const textSample = extractedText.substring(0, 10000);
+    const result = await runTextDetectionFallbackChain(textSample);
+    return res.json({
+      ...result,
+      targetUrl,
+      extractedCharacterCount: textSample.length
+    });
+  } catch (err: any) {
+    console.error("[detect-link] Failed to fetch or analyze link:", err?.message || err);
+    return res.json({
+      verdict: "UNKNOWN",
+      status: "all_providers_failed",
+      error: `Error fetching URL content: ${err?.message || "Timeout or network failure"}`
+    });
+  }
+});
+
+// API endpoint for standalone Sapling AI Text/Image Detection
+app.post("/api/sapling-detect", async (req, res) => {
+  const { text, claim, content } = req.body;
+  const targetText = text || claim || content || "";
+
+  if (!targetText.trim()) {
+    return res.status(400).json({
+      success: false,
+      error: "No text provided for Sapling AI detection analysis."
+    });
+  }
+
+  const result = await checkSaplingAiText(targetText);
+  if (result) {
+    return res.json({
+      success: true,
+      score: result.score,
+      isAi: result.isAi,
+      sentenceScores: result.sentenceScores,
+      raw: result.raw
+    });
+  } else {
+    return res.status(500).json({
+      success: false,
+      error: "Unable to process text with Sapling AI detector API. Please verify key or try again."
+    });
+  }
+});
+
 // API endpoint for Strict Fact Verification Assistant with Google Search Grounding and low temperature (0.1)
 app.post("/api/fact-verify", async (req, res) => {
   const { claim, statement, text } = req.body;
@@ -452,14 +819,19 @@ app.post("/api/fact-verify", async (req, res) => {
   }
 
   try {
+    // Perform Sapling AI detection check in parallel
+    const saplingPromise = checkSaplingAiText(userClaim);
+
     const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
     if (!apiKey) {
+      const saplingRes = await saplingPromise;
       return res.status(500).json({
         verdict: "UNKNOWN",
         confidence: "low",
         reasoning: "API key is missing in server environment (process.env.GEMINI_API_KEY or process.env.API_KEY).",
         sources: [],
-        ai_generation_likelihood: "not_applicable"
+        ai_generation_likelihood: saplingRes ? (saplingRes.score >= 65 ? "high" : saplingRes.score >= 35 ? "medium" : "low") : "not_applicable",
+        sapling_ai_score: saplingRes?.score
       });
     }
 
@@ -521,16 +893,19 @@ Do not include any text outside the JSON object.`;
         if (rawErrMsg.includes("429") || rawErrMsg.includes("RESOURCE_EXHAUSTED") || rawErrMsg.includes("quota")) {
           userReasoning = "API rate limit reached (429 RESOURCE_EXHAUSTED). Grounded search verification was temporarily unavailable.";
         }
+        const saplingRes = await saplingPromise;
         return res.status(200).json({
           verdict: "UNKNOWN",
           confidence: "low",
           reasoning: userReasoning,
           sources: [],
-          ai_generation_likelihood: "not_applicable"
+          ai_generation_likelihood: saplingRes ? (saplingRes.score >= 65 ? "high" : saplingRes.score >= 35 ? "medium" : "low") : "not_applicable",
+          sapling_ai_score: saplingRes?.score
         });
       }
     }
 
+    const saplingRes = await saplingPromise;
     const rawText = response?.text || "";
     let jsonCandidate = rawText.trim();
     if (jsonCandidate.includes("```")) {
@@ -555,6 +930,19 @@ Do not include any text outside the JSON object.`;
           }
         }
 
+        // Attach Sapling AI Detection result if available
+        if (saplingRes) {
+          parsed.sapling_ai_score = saplingRes.score;
+          parsed.sapling_detected_ai = saplingRes.isAi;
+          if (saplingRes.score >= 65) {
+            parsed.ai_generation_likelihood = "high";
+          } else if (saplingRes.score >= 35) {
+            parsed.ai_generation_likelihood = "medium";
+          } else {
+            parsed.ai_generation_likelihood = "low";
+          }
+        }
+
         // Return exact parsed JSON pass-through response
         return res.json(parsed);
       } catch (parseErr) {
@@ -568,8 +956,10 @@ Do not include any text outside the JSON object.`;
       confidence: "low",
       reasoning: rawText || "Google Search grounding did not return sufficient verifiable sources to conclude a verdict.",
       sources: [],
-      ai_generation_likelihood: "not_applicable"
+      ai_generation_likelihood: saplingRes ? (saplingRes.score >= 65 ? "high" : saplingRes.score >= 35 ? "medium" : "low") : "not_applicable",
+      sapling_ai_score: saplingRes?.score
     });
+
   } catch (err: any) {
     console.error("[fact-verify] Server error:", err);
     return res.status(500).json({
@@ -1344,6 +1734,26 @@ User Text/Url: ${contentText || mediaUrl || "Image attached"}`;
 
     const raw = response.text || "{}";
     let parsed = JSON.parse(raw);
+
+    // Run Sapling AI text detection if text content is supplied
+    const textToAnalyze = contentText || (contentType === "text" ? mediaUrl : "");
+    if (textToAnalyze && textToAnalyze.trim().length >= 5) {
+      const saplingRes = await checkSaplingAiText(textToAnalyze);
+      if (saplingRes) {
+        parsed.saplingDetector = {
+          score: saplingRes.score,
+          isAi: saplingRes.isAi,
+          sentenceScores: saplingRes.sentenceScores
+        };
+        // Blend Sapling's score for high text fidelity
+        parsed.aiScore = saplingRes.score;
+        parsed.signals = [
+          `Sapling AI Detector API score: ${saplingRes.score}% likelihood of LLM synthetic generation`,
+          ...(parsed.signals || []).slice(0, 2)
+        ];
+      }
+    }
+
     if (!parsed.disclaimer) {
       parsed.disclaimer = "This score is a probabilistic estimate generated by AI analysis models and should not be taken as absolute or definitive proof.";
     }
