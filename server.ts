@@ -359,7 +359,7 @@ async function checkSaplingAiText(text: string): Promise<{
   sentenceScores?: any[];
   raw?: any;
 } | null> {
-  const saplingKey = process.env.SAPLING_API_KEY;
+  const saplingKey = process.env.SAPLING_API_KEY || process.env.SAPLINGAI_API_KEY || process.env.SAPLING_KEY;
   const cleanText = (text || "").trim();
 
   if (!cleanText || cleanText.length < 5 || !saplingKey) {
@@ -404,7 +404,7 @@ async function checkSaplingAiText(text: string): Promise<{
 }
 
 /**
- * Fallback chain for AI text detection: Sapling AI -> Winston AI -> Eden AI
+ * Fallback chain for AI text detection: Sapling AI -> Winston AI -> Eden AI / Edlin
  */
 async function runTextDetectionFallbackChain(text: string) {
   const cleanText = (text || "").trim();
@@ -413,7 +413,8 @@ async function runTextDetectionFallbackChain(text: string) {
   }
 
   // 1) Sapling AI
-  if (process.env.SAPLING_API_KEY && providerQuota.sapling > 0) {
+  const saplingKey = process.env.SAPLING_API_KEY || process.env.SAPLINGAI_API_KEY || process.env.SAPLING_KEY;
+  if (saplingKey && providerQuota.sapling > 0) {
     try {
       const saplingResult = await checkSaplingAiText(cleanText);
       if (saplingResult) {
@@ -433,13 +434,14 @@ async function runTextDetectionFallbackChain(text: string) {
   }
 
   // 2) Winston AI
-  if (process.env.WINSTON_API_KEY && providerQuota.winston > 0) {
+  const winstonKey = process.env.WINSTON_API_KEY || process.env.WINSTONAI_API_KEY || process.env.WINSTON_KEY;
+  if (winstonKey && providerQuota.winston > 0) {
     try {
       const res = await fetchWithTimeout("https://api.gowinston.ai/v2/ai-content-detection", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.WINSTON_API_KEY}`
+          "Authorization": `Bearer ${winstonKey}`
         },
         body: JSON.stringify({ text: cleanText })
       }, 8000);
@@ -466,14 +468,15 @@ async function runTextDetectionFallbackChain(text: string) {
     }
   }
 
-  // 3) Eden AI
-  if (process.env.EDENAI_API_KEY && providerQuota.edenai > 0) {
+  // 3) Eden AI / Edlin
+  const edenKey = process.env.EDENAI_API_KEY || process.env.EDLIN_API_KEY || process.env.EDEN_API_KEY || process.env.EDEN_KEY;
+  if (edenKey && providerQuota.edenai > 0) {
     try {
       const res = await fetchWithTimeout("https://api.edenai.run/v2/text/ai_detection", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.EDENAI_API_KEY}`
+          "Authorization": `Bearer ${edenKey}`
         },
         body: JSON.stringify({ providers: "winstonai", text: cleanText })
       }, 8000);
@@ -655,7 +658,7 @@ app.post("/api/detect-text", async (req, res) => {
   return res.json(result);
 });
 
-// POST /api/detect-image — detects if a submitted image is AI-generated via Winston AI
+// POST /api/detect-image — detects if a submitted image is AI-generated via Winston AI or Eden AI
 app.post("/api/detect-image", async (req, res) => {
   const { imageUrl, imageBase64, image, url } = req.body;
   const targetUrl = imageUrl || url || "";
@@ -669,17 +672,18 @@ app.post("/api/detect-image", async (req, res) => {
     });
   }
 
-  if (process.env.WINSTON_API_KEY && providerQuota.winston > 0) {
+  const winstonKey = process.env.WINSTON_API_KEY || process.env.WINSTONAI_API_KEY || process.env.WINSTON_KEY;
+  if (winstonKey && providerQuota.winston > 0) {
     try {
-      const payload: any = {};
-      if (targetUrl) payload.image_url = targetUrl;
-      if (targetBase64) payload.image_base64 = targetBase64;
+      const payload: any = {
+        url: targetUrl || targetBase64
+      };
 
-      const response = await fetchWithTimeout("https://api.gowinston.ai/v2/ai-image-detection", {
+      const response = await fetchWithTimeout("https://api.gowinston.ai/v2/image-detection", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.WINSTON_API_KEY}`
+          "Authorization": `Bearer ${winstonKey}`
         },
         body: JSON.stringify(payload)
       }, 8000);
@@ -687,8 +691,17 @@ app.post("/api/detect-image", async (req, res) => {
       if (response.ok) {
         const data = await response.json();
         providerQuota.winston = Math.max(0, providerQuota.winston - 1);
-        let rawScore = typeof data.score === "number" ? data.score : (typeof data.ai_score === "number" ? data.ai_score : 0);
-        const score = Math.round(rawScore <= 1 ? rawScore * 100 : rawScore);
+        let aiScore = 0;
+        if (typeof data.ai_probability === "number") {
+          aiScore = Math.round(data.ai_probability <= 1 ? data.ai_probability * 100 : data.ai_probability);
+        } else if (typeof data.human_probability === "number") {
+          aiScore = Math.round((1 - data.human_probability) * 100);
+        } else if (typeof data.ai_score === "number") {
+          aiScore = Math.round(data.ai_score <= 1 ? data.ai_score * 100 : data.ai_score);
+        } else if (typeof data.score === "number") {
+          aiScore = Math.round(data.score <= 1 ? data.score * 100 : data.score);
+        }
+        const score = Math.min(100, Math.max(0, aiScore));
         const verdict = score >= 50 ? "AI_GENERATED" : "HUMAN";
         return res.json({
           verdict,
@@ -699,17 +712,55 @@ app.post("/api/detect-image", async (req, res) => {
           details: data
         });
       } else {
-        console.warn("[detect-image] Winston AI image detection status:", response.status, await response.text());
+        const errText = await response.text();
+        console.warn("[detect-image] Winston AI image detection status:", response.status, errText);
       }
     } catch (err: any) {
       console.warn("[detect-image] Winston AI image detection request failed or timed out:", err?.message || err);
     }
   }
 
+  const edenKey = process.env.EDENAI_API_KEY || process.env.EDLIN_API_KEY || process.env.EDEN_API_KEY || process.env.EDEN_KEY;
+  if (edenKey && providerQuota.edenai > 0) {
+    try {
+      const payload: any = {
+        providers: "winstonai",
+        file_url: targetUrl || undefined
+      };
+      const response = await fetchWithTimeout("https://api.edenai.run/v2/image/ai_detection", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${edenKey}`
+        },
+        body: JSON.stringify(payload)
+      }, 8000);
+
+      if (response.ok) {
+        const data = await response.json();
+        providerQuota.edenai = Math.max(0, providerQuota.edenai - 1);
+        const winstonResult = data.winstonai || {};
+        let rawScore = typeof winstonResult.ai_score === "number" ? winstonResult.ai_score : (typeof winstonResult.score === "number" ? winstonResult.score : 0);
+        const score = Math.round(rawScore <= 1 ? rawScore * 100 : rawScore);
+        const verdict = score >= 50 ? "AI_GENERATED" : "HUMAN";
+        return res.json({
+          verdict,
+          score,
+          isAi: score >= 50,
+          provider: "edenai",
+          status: "success",
+          details: data
+        });
+      }
+    } catch (err: any) {
+      console.warn("[detect-image] Eden AI image detection failed:", err?.message || err);
+    }
+  }
+
   return res.json({
     verdict: "UNKNOWN",
     status: "all_providers_failed",
-    reasoning: "Winston AI image detection failed, key was unconfigured, or quota was exhausted."
+    reasoning: "Winston / Eden AI image detection failed, key was unconfigured, or quota was exhausted."
   });
 });
 
@@ -803,6 +854,92 @@ app.post("/api/sapling-detect", async (req, res) => {
   }
 });
 
+// Helper function to query Google Fact Check Tools API for verified publisher reviews
+async function checkGoogleFactCheckTools(claim: string): Promise<any | null> {
+  const apiKey = process.env.GOOGLE_FACTCHECK_API_KEY;
+  if (!apiKey) {
+    return null;
+  }
+
+  try {
+    const url = `https://factchecktools.googleapis.com/v1alpha1/claims:search?query=${encodeURIComponent(claim)}&key=${apiKey}`;
+    const response = await fetchWithTimeout(url, {}, 6000);
+    if (!response.ok) {
+      console.warn(`[google-factcheck] API status ${response.status}:`, await response.text());
+      return null;
+    }
+
+    const data = await response.json();
+    if (!data.claims || !Array.isArray(data.claims) || data.claims.length === 0) {
+      return null;
+    }
+
+    const firstClaim = data.claims[0];
+    const claimReviews = firstClaim.claimReview || [];
+    if (claimReviews.length === 0) {
+      return null;
+    }
+
+    const review = claimReviews[0];
+    const textualRating = (review.textualRating || "").toLowerCase();
+    const publisherName = review.publisher?.name || "Fact Check Publisher";
+    const reviewUrl = review.url || "";
+    const claimText = firstClaim.text || claim;
+
+    let verdict: "REAL" | "FALSE" | null = null;
+    let confidence: "high" | "medium" = "high";
+
+    if (
+      textualRating.includes("true") ||
+      textualRating.includes("correct") ||
+      textualRating.includes("accurate")
+    ) {
+      verdict = "REAL";
+      confidence = "high";
+    } else if (
+      textualRating.includes("false") ||
+      textualRating.includes("fake") ||
+      textualRating.includes("pants on fire") ||
+      textualRating.includes("incorrect")
+    ) {
+      verdict = "FALSE";
+      confidence = "high";
+    } else if (
+      textualRating.includes("misleading") ||
+      textualRating.includes("partly") ||
+      textualRating.includes("mixture")
+    ) {
+      verdict = "FALSE";
+      confidence = "medium";
+    } else {
+      return null;
+    }
+
+    const sources: string[] = [];
+    if (publisherName && reviewUrl) {
+      sources.push(`${publisherName} (${reviewUrl})`);
+    } else if (reviewUrl) {
+      sources.push(reviewUrl);
+    } else if (publisherName) {
+      sources.push(publisherName);
+    }
+
+    return {
+      verdict,
+      confidence,
+      reasoning: `Fact-checked by ${publisherName}: "${review.textualRating}". Original claim: "${claimText}".`,
+      sources,
+      source: "google-factcheck-tools",
+      publisher: publisherName,
+      reviewUrl,
+      textualRating: review.textualRating
+    };
+  } catch (err: any) {
+    console.warn("[google-factcheck] Error fetching fact check tools:", err?.message || err);
+    return null;
+  }
+}
+
 // API endpoint for Strict Fact Verification Assistant with Google Search Grounding and low temperature (0.1)
 app.post("/api/fact-verify", async (req, res) => {
   const { claim, statement, text } = req.body;
@@ -814,12 +951,24 @@ app.post("/api/fact-verify", async (req, res) => {
       confidence: "low",
       reasoning: "No claim or text was provided for verification.",
       sources: [],
+      source: "gemini-search",
       ai_generation_likelihood: "not_applicable"
     });
   }
 
   try {
-    // Perform Sapling AI detection check in parallel
+    // 1. Try Google Fact Check Tools API first
+    const factCheckResult = await checkGoogleFactCheckTools(userClaim);
+    if (factCheckResult) {
+      const saplingRes = await checkSaplingAiText(userClaim);
+      return res.json({
+        ...factCheckResult,
+        ai_generation_likelihood: saplingRes ? (saplingRes.score >= 65 ? "high" : saplingRes.score >= 35 ? "medium" : "low") : "not_applicable",
+        sapling_ai_score: saplingRes?.score
+      });
+    }
+
+    // 2. Perform Sapling AI detection check in parallel for Gemini path
     const saplingPromise = checkSaplingAiText(userClaim);
 
     const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
@@ -830,6 +979,7 @@ app.post("/api/fact-verify", async (req, res) => {
         confidence: "low",
         reasoning: "API key is missing in server environment (process.env.GEMINI_API_KEY or process.env.API_KEY).",
         sources: [],
+        source: "gemini-search",
         ai_generation_likelihood: saplingRes ? (saplingRes.score >= 65 ? "high" : saplingRes.score >= 35 ? "medium" : "low") : "not_applicable",
         sapling_ai_score: saplingRes?.score
       });
@@ -899,6 +1049,7 @@ Do not include any text outside the JSON object.`;
           confidence: "low",
           reasoning: userReasoning,
           sources: [],
+          source: "gemini-search",
           ai_generation_likelihood: saplingRes ? (saplingRes.score >= 65 ? "high" : saplingRes.score >= 35 ? "medium" : "low") : "not_applicable",
           sapling_ai_score: saplingRes?.score
         });
@@ -943,6 +1094,8 @@ Do not include any text outside the JSON object.`;
           }
         }
 
+        parsed.source = "gemini-search";
+
         // Return exact parsed JSON pass-through response
         return res.json(parsed);
       } catch (parseErr) {
@@ -956,6 +1109,7 @@ Do not include any text outside the JSON object.`;
       confidence: "low",
       reasoning: rawText || "Google Search grounding did not return sufficient verifiable sources to conclude a verdict.",
       sources: [],
+      source: "gemini-search",
       ai_generation_likelihood: saplingRes ? (saplingRes.score >= 65 ? "high" : saplingRes.score >= 35 ? "medium" : "low") : "not_applicable",
       sapling_ai_score: saplingRes?.score
     });
