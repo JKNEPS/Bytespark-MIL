@@ -345,7 +345,8 @@ function validateAndClampConfidence(score: any, isGrounded: boolean = true): num
 const providerQuota = {
   sapling: 1000,
   winston: 1000,
-  edenai: 1000
+  edenai: 1000,
+  imagga: 1000
 };
 
 // Helper function to fetch with timeout (default 8 seconds per call)
@@ -653,9 +654,90 @@ app.get("/api/quota-status", (req, res) => {
     edenai: {
       remaining: providerQuota.edenai,
       configured: Boolean(process.env.EDENAI_API_KEY)
+    },
+    imagga: {
+      remaining: providerQuota.imagga,
+      configured: true
     }
   });
 });
+
+/**
+ * Imagga Image Analysis and Tagging helper function.
+ * Queries Imagga API endpoint (https://api.imagga.com/v2/tags?image_url=...)
+ */
+async function checkImaggaImageAnalysis(imageUrl: string): Promise<{
+  verdict: "AI_GENERATED" | "HUMAN";
+  score: number;
+  isAi: boolean;
+  provider: "imagga";
+  status: "success";
+  tags: Array<{ name: string; confidence: number }>;
+  details?: any;
+} | null> {
+  if (!imageUrl || !imageUrl.startsWith("http")) {
+    return null;
+  }
+
+  const imaggaKey = process.env.IMAGGA_API_KEY || "acc_dc0c86eed205c36";
+  const imaggaSecret = process.env.IMAGGA_API_SECRET || "d8a1f6eb9152488255ed24ad261f1eb7";
+  const authHeader = process.env.IMAGGA_AUTH_HEADER || ("Basic " + Buffer.from(`${imaggaKey}:${imaggaSecret}`).toString("base64"));
+
+  try {
+    const url = `https://api.imagga.com/v2/tags?image_url=${encodeURIComponent(imageUrl)}`;
+    const response = await fetchWithTimeout(url, {
+      method: "GET",
+      headers: {
+        "Authorization": authHeader
+      }
+    }, 8000);
+
+    if (!response.ok) {
+      console.warn("[imagga] API status:", response.status, await response.text());
+      return null;
+    }
+
+    const data = await response.json();
+    providerQuota.imagga = Math.max(0, providerQuota.imagga - 1);
+    const rawTags = data?.result?.tags || [];
+    const formattedTags = rawTags.slice(0, 15).map((t: any) => ({
+      name: t.tag?.en || "",
+      confidence: Math.round(t.confidence || 0)
+    }));
+
+    const aiKeywords = [
+      "illustration", "digital art", "cgi", "rendering", "3d render", "drawing", "painting", 
+      "graphic design", "vector", "generated", "synthetic", "artificial", "deepfake", 
+      "anime", "cartoon", "fantasy", "surreal", "fiction"
+    ];
+
+    let maxAiConfidence = 0;
+    formattedTags.forEach((t: { name: string; confidence: number }) => {
+      const lower = t.name.toLowerCase();
+      if (aiKeywords.some(k => lower.includes(k))) {
+        if (t.confidence > maxAiConfidence) {
+          maxAiConfidence = t.confidence;
+        }
+      }
+    });
+
+    const score = Math.round(maxAiConfidence);
+    const verdict = score >= 50 ? "AI_GENERATED" : "HUMAN";
+
+    return {
+      verdict,
+      score,
+      isAi: score >= 50,
+      provider: "imagga",
+      status: "success",
+      tags: formattedTags,
+      details: data
+    };
+  } catch (err: any) {
+    console.warn("[imagga] Error analyzing image tags:", err?.message || err);
+    return null;
+  }
+}
 
 // POST /api/detect-text — detects if submitted text is AI-generated (uses Sapling -> Winston -> Eden AI fallback chain)
 app.post("/api/detect-text", async (req, res) => {
@@ -773,10 +855,18 @@ app.post("/api/detect-image", async (req, res) => {
     }
   }
 
+  // Imagga image tagging analysis fallback
+  if (targetUrl && providerQuota.imagga > 0) {
+    const imaggaResult = await checkImaggaImageAnalysis(targetUrl);
+    if (imaggaResult) {
+      return res.json(imaggaResult);
+    }
+  }
+
   return res.json({
     verdict: "UNKNOWN",
     status: "all_providers_failed",
-    reasoning: "Winston / Eden AI image detection failed, key was unconfigured, or quota was exhausted."
+    reasoning: "Image detection providers (Winston AI, Eden AI, Imagga) failed, keys were unconfigured, or quota was exhausted."
   });
 });
 
