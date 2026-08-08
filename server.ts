@@ -11,11 +11,27 @@ const PORT = 3000;
 
 app.use(express.json({ limit: "25mb" }));
 
+// Enable CORS middleware so requests from shared links, preview frames, and external domains work globally
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
+// Helper to get active Gemini API key from environment
+function getGeminiApiKey(): string | null {
+  return process.env.GEMINI_API_KEY || process.env.API_KEY || process.env.GOOGLE_API_KEY || null;
+}
+
 // Initialize Gemini client lazily/safely
 function getGeminiClient() {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getGeminiApiKey();
   if (!apiKey) {
-    console.warn("GEMINI_API_KEY environment variable is missing.");
+    console.warn("GEMINI_API_KEY / API_KEY / GOOGLE_API_KEY environment variable is missing.");
     return null;
   }
   return new GoogleGenAI({
@@ -856,7 +872,7 @@ app.post("/api/sapling-detect", async (req, res) => {
 
 // Helper function to query Google Fact Check Tools API for verified publisher reviews
 async function checkGoogleFactCheckTools(claim: string): Promise<any | null> {
-  const apiKey = process.env.GOOGLE_FACTCHECK_API_KEY;
+  const apiKey = process.env.GOOGLE_FACTCHECK_API_KEY || process.env.FACTCHECK_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY || process.env.GOOGLE_API_KEY;
   if (!apiKey) {
     return null;
   }
@@ -971,15 +987,17 @@ app.post("/api/fact-verify", async (req, res) => {
     // 2. Perform Sapling AI detection check in parallel for Gemini path
     const saplingPromise = checkSaplingAiText(userClaim);
 
-    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+    const apiKey = getGeminiApiKey();
     if (!apiKey) {
       const saplingRes = await saplingPromise;
-      return res.status(500).json({
-        verdict: "UNKNOWN",
-        confidence: "low",
-        reasoning: "API key is missing in server environment (process.env.GEMINI_API_KEY or process.env.API_KEY).",
+      return res.json({
+        verdict: saplingRes && saplingRes.score >= 65 ? "AI_GENERATED" : "UNKNOWN",
+        confidence: "medium",
+        reasoning: saplingRes 
+          ? `Analysis based on Sapling AI detector. Score: ${saplingRes.score}%. Live Gemini API key unconfigured on server.`
+          : "Live search verification requires GEMINI_API_KEY / GOOGLE_API_KEY configured on server environment.",
         sources: [],
-        source: "gemini-search",
+        source: "sapling-ai-fallback",
         ai_generation_likelihood: saplingRes ? (saplingRes.score >= 65 ? "high" : saplingRes.score >= 35 ? "medium" : "low") : "not_applicable",
         sapling_ai_score: saplingRes?.score
       });
@@ -1131,12 +1149,12 @@ app.post("/api/fact-detective", async (req, res) => {
   const { mode, claim, url, imageData, mediaType, enableThinking } = req.body;
 
   try {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+    const apiKey = getGeminiApiKey();
     if (!apiKey) {
-      console.error("[Fact Detective] Error: Neither GEMINI_API_KEY nor API_KEY is set in environment.");
-      return res.status(500).json({
+      console.error("[Fact Detective] Error: GEMINI_API_KEY / API_KEY is missing in server environment.");
+      return res.status(200).json({
         success: false,
-        error: "API key is missing in server environment (process.env.GEMINI_API_KEY or process.env.API_KEY).",
+        error: "Server missing GEMINI_API_KEY or GOOGLE_API_KEY environment variable.",
         rawText: null
       });
     }
@@ -1352,9 +1370,9 @@ app.post("/api/fact-detective/chat", async (req, res) => {
   const { claim, verdict, messages, enableThinking } = req.body;
 
   try {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+    const apiKey = getGeminiApiKey();
     if (!apiKey) {
-      return res.status(500).json({ success: false, error: "API key is missing in server environment." });
+      return res.status(200).json({ success: false, error: "API key is missing in server environment." });
     }
 
     const ai = new GoogleGenAI({ apiKey });
@@ -1415,9 +1433,9 @@ app.post("/api/fact-detective/intel", async (req, res) => {
   const { claim, tool, verdict } = req.body;
 
   try {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+    const apiKey = getGeminiApiKey();
     if (!apiKey) {
-      return res.status(500).json({ success: false, error: "API key is missing in server environment." });
+      return res.status(200).json({ success: false, error: "API key is missing in server environment." });
     }
 
     const ai = new GoogleGenAI({ apiKey });
